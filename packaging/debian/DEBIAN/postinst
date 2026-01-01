@@ -1,0 +1,43 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR="/opt/privacyguardian"
+
+echo "Setting up PrivacyGuardian..."
+
+if [ ! -d "$INSTALL_DIR/venv" ]; then
+    echo "Creating Python virtual environment..."
+    python3 -m venv "$INSTALL_DIR/venv"
+fi
+
+echo "Installing Python dependencies..."
+"$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
+"$INSTALL_DIR/venv/bin/pip" install --quiet -r "$INSTALL_DIR/requirements.txt"
+
+if pkg-config --exists libsodium 2>/dev/null; then
+    echo "Compiling crypto extension..."
+    mkdir -p "$INSTALL_DIR/build"
+    if [ -f "$INSTALL_DIR/code/crypto_core.c" ]; then
+        gcc -O3 -fPIC -shared \
+            -o "$INSTALL_DIR/build/libpgcrypto.so" \
+            "$INSTALL_DIR/code/crypto_core.c" \
+            $(pkg-config --cflags --libs libsodium) 2>/dev/null || true
+    fi
+fi
+
+chmod 755 "$INSTALL_DIR/guardian"
+chmod 755 "$INSTALL_DIR/pg-wrapper"
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+fi
+
+echo ""
+echo "PrivacyGuardian installed successfully!"
+echo "Launch from your application menu or run: /opt/privacyguardian/guardian gui"
+
+exit 0

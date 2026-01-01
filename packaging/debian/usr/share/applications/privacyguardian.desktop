@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=PrivacyGuardian
+GenericName=LLM Privacy Proxy
+Comment=Protect your personal data when using AI assistants
+Exec=/opt/privacyguardian/guardian gui
+Icon=privacyguardian
+Terminal=false
+Categories=Security;Network;GTK;
+Keywords=privacy;llm;ai;pii;encryption;proxy;claude;chatgpt;
+StartupNotify=true
+StartupWMClass=com.privacyguardian.dashboard

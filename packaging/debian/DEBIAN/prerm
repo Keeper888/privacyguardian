@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+
+echo "Preparing to remove PrivacyGuardian..."
+
+if pgrep -f "guardian_proxy" >/dev/null 2>&1; then
+    echo "Stopping proxy service..."
+    pkill -f "guardian_proxy" 2>/dev/null || true
+fi
+
+if systemctl is-active --quiet privacyguardian 2>/dev/null; then
+    systemctl stop privacyguardian 2>/dev/null || true
+fi
+
+if systemctl is-enabled --quiet privacyguardian 2>/dev/null; then
+    systemctl disable privacyguardian 2>/dev/null || true
+fi
+
+if [ -f /etc/systemd/system/privacyguardian.service ]; then
+    rm -f /etc/systemd/system/privacyguardian.service
+    systemctl daemon-reload 2>/dev/null || true
+fi
+
+echo "PrivacyGuardian services stopped."
+
+exit 0
