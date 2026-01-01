@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""
+PrivacyGuardian Wrapper - Routes LLM apps through the privacy proxy
+
+Usage:
+    pg-wrapper <app> [args...]
+
+Examples:
+    pg-wrapper claude
+    pg-wrapper claude --help
+    pg-wrapper chatgpt
+
+The wrapper checks ~/.privacyguardian/enabled to decide whether to
+route traffic through the proxy. If the flag file doesn't exist,
+the app runs directly without modification.
+"""
+
+import os
+import sys
+import subprocess
+import urllib.request
+from pathlib import Path
+
+# App name -> environment variable mapping
+APP_ENV_VARS = {
+    'claude': 'ANTHROPIC_BASE_URL',
+    'chatgpt': 'OPENAI_BASE_URL',
+    'openai': 'OPENAI_BASE_URL',
+    'gemini': 'GOOGLE_AI_BASE_URL',
+    'mistral': 'MISTRAL_API_BASE_URL',
+    'cohere': 'COHERE_API_BASE_URL',
+    'groq': 'GROQ_API_BASE_URL',
+}
+
+PROXY_URL = "http://localhost:6660"
+FLAG_FILE = Path.home() / ".privacyguardian" / "enabled"
+GUARDIAN_DIR = Path(__file__).parent
+
+
+def is_protection_enabled():
+    """Check if protection flag file exists"""
+    return FLAG_FILE.exists()
+
+
+def is_proxy_running():
+    """Check if proxy is alive via health endpoint"""
+    try:
+        with urllib.request.urlopen(f"{PROXY_URL}/__guardian__/health", timeout=2) as resp:
+            return resp.status == 200
+    except:
+        return False
+
+
+def start_proxy():
+    """Start the proxy via guardian CLI"""
+    guardian_script = GUARDIAN_DIR / "guardian"
+    if guardian_script.exists():
+        subprocess.Popen(
+            [str(guardian_script), "start"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        # Wait a moment for proxy to start
+        import time
+        for _ in range(10):
+            time.sleep(0.5)
+            if is_proxy_running():
+                return True
+    return False
+
+
+def prompt_user():
+    """Ask user what to do when proxy is not running"""
+    print("\033[33m")
+    print("╔═══════════════════════════════════════════════════════════╗")
+    print("║  PrivacyGuardian is ENABLED but proxy is not running     ║")
+    print("╠═══════════════════════════════════════════════════════════╣")
+    print("║  [S] Start proxy and continue with protection            ║")
+    print("║  [D] Continue Direct (unprotected this time)             ║")
+    print("║  [C] Cancel                                              ║")
+    print("╚═══════════════════════════════════════════════════════════╝")
+    print("\033[0m")
+
+    while True:
+        try:
+            choice = input("Choice [S/D/C]: ").strip().upper()
+            if choice in ('S', 'D', 'C', ''):
+                return choice or 'S'  # Default to Start
+        except (KeyboardInterrupt, EOFError):
+            return 'C'
+
+
+def run_app(app_name, args, use_proxy=False):
+    """Run the app with optional proxy routing"""
+    env = os.environ.copy()
+
+    if use_proxy:
+        env_var = APP_ENV_VARS.get(app_name)
+        if env_var:
+            env[env_var] = PROXY_URL
+            print(f"\033[32m[PrivacyGuardian] Protection active\033[0m")
+
+    # Execute the app
+    os.execvpe(app_name, [app_name] + args, env)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        print("\nSupported apps:", ", ".join(sorted(APP_ENV_VARS.keys())))
+        sys.exit(1)
+
+    app_name = sys.argv[1]
+    app_args = sys.argv[2:]
+
+    # Check if we know how to proxy this app
+    if app_name not in APP_ENV_VARS:
+        print(f"\033[33mWarning: Unknown app '{app_name}', running without proxy support\033[0m")
+        run_app(app_name, app_args, use_proxy=False)
+        return
+
+    # Check if protection is enabled
+    if not is_protection_enabled():
+        # Protection disabled, run directly
+        run_app(app_name, app_args, use_proxy=False)
+        return
+
+    # Protection is enabled, check if proxy is running
+    if is_proxy_running():
+        # All good, route through proxy
+        run_app(app_name, app_args, use_proxy=True)
+        return
+
+    # Protection enabled but proxy not running - ask user
+    choice = prompt_user()
+
+    if choice == 'S':
+        print("Starting proxy...")
+        if start_proxy():
+            print("\033[32mProxy started!\033[0m")
+            run_app(app_name, app_args, use_proxy=True)
+        else:
+            print("\033[31mFailed to start proxy. Running direct.\033[0m")
+            run_app(app_name, app_args, use_proxy=False)
+
+    elif choice == 'D':
+        print("\033[33mRunning without protection (this session only)\033[0m")
+        run_app(app_name, app_args, use_proxy=False)
+
+    else:  # Cancel
+        print("Cancelled.")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

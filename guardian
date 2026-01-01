@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+"""
+PrivacyGuardian CLI - Universal LLM PII Protection
+"""
+
+import argparse
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+GUARDIAN_DIR = Path(__file__).parent
+VENV_PYTHON = GUARDIAN_DIR / "venv" / "bin" / "python"
+CODE_DIR = GUARDIAN_DIR / "code"
+CONFIG_DIR = Path.home() / ".privacyguardian"
+FLAG_FILE = CONFIG_DIR / "enabled"
+
+BANNER = """
+\033[36m
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║   ██████╗ ██████╗ ██╗██╗   ██╗ █████╗  ██████╗██╗   ██╗      ║
+    ║   ██╔══██╗██╔══██╗██║██║   ██║██╔══██╗██╔════╝╚██╗ ██╔╝      ║
+    ║   ██████╔╝██████╔╝██║██║   ██║███████║██║      ╚████╔╝       ║
+    ║   ██╔═══╝ ██╔══██╗██║╚██╗ ██╔╝██╔══██║██║       ╚██╔╝        ║
+    ║   ██║     ██║  ██║██║ ╚████╔╝ ██║  ██║╚██████╗   ██║         ║
+    ║   ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚═╝  ╚═╝ ╚═════╝   ╚═╝         ║
+    ║                                                               ║
+    ║   ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗ ██╗ █████╗ ███╗   ██╗ ║
+    ║  ██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗██║██╔══██╗████╗  ██║ ║
+    ║  ██║  ███╗██║   ██║███████║██████╔╝██║  ██║██║███████║██╔██╗ ██║ ║
+    ║  ██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║██║██╔══██║██║╚██╗██║ ║
+    ║  ╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝██║██║  ██║██║ ╚████║ ║
+    ║   ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ║
+    ╚═══════════════════════════════════════════════════════════════╝
+\033[0m
+\033[33m    "Your data swims freely in the local pond,
+     but leaves encrypted when it ventures outside."\033[0m
+"""
+
+USAGE_HELP = """
+\033[32mBasic Commands:\033[0m
+  setup          Set up Python environment and dependencies
+  install        Install as system service (auto-start on boot)
+  uninstall      Remove system service
+  start          Start the proxy manually
+  stop           Stop the proxy service
+  status         Show service and protection status
+  gui            Open the GUI dashboard
+  test           Test PII detection
+
+\033[32mProtection Toggle (Recommended):\033[0m
+  enable         Enable protection (start proxy + set flag)
+  disable        Disable protection (stop proxy + remove flag)
+  toggle         Toggle protection on/off
+
+\033[32mStealth Mode (Advanced - Zero Config):\033[0m
+  stealth        Full stealth install (CA + iptables + service)
+  stealth-remove Remove stealth mode completely
+
+\033[32mSupported LLM Providers:\033[0m
+  Anthropic, OpenAI, Google AI, Azure OpenAI, Mistral,
+  Cohere, Groq, Perplexity, Together AI, Ollama, LM Studio
+
+\033[32mData Storage:\033[0m
+  • Encryption key: ~/.privacyguardian/master.key
+  • Token vault:    ~/.privacyguardian/vault.db
+  • CA certificate: ~/.privacyguardian/ca/
+"""
+
+
+def ensure_venv():
+    """Ensure virtual environment exists"""
+    if not VENV_PYTHON.exists():
+        print("\033[31mError: Not set up. Run './guardian setup' first.\033[0m")
+        sys.exit(1)
+
+
+def setup():
+    """Set up PrivacyGuardian environment"""
+    print(BANNER)
+    print("\033[33mSetting up PrivacyGuardian...\033[0m\n")
+
+    os.chdir(GUARDIAN_DIR)
+
+    # Create venv if needed
+    if not VENV_PYTHON.exists():
+        print("  → Creating Python virtual environment...", end=" ", flush=True)
+        subprocess.run([sys.executable, "-m", "venv", "venv"], check=True)
+        print("✓")
+
+    # Install dependencies
+    print("  → Installing Python dependencies...", end=" ", flush=True)
+    subprocess.run(
+        [str(VENV_PYTHON), "-m", "pip", "install", "-q", "--upgrade", "pip"],
+        check=True
+    )
+    subprocess.run(
+        [str(VENV_PYTHON), "-m", "pip", "install", "-q", "-r", "requirements.txt"],
+        check=True
+    )
+    print("✓")
+
+    # Install GTK dependencies for GUI
+    print("  → Checking GTK dependencies...", end=" ", flush=True)
+    subprocess.run(
+        [str(VENV_PYTHON), "-m", "pip", "install", "-q", "PyGObject"],
+        capture_output=True
+    )
+    print("✓")
+
+    print("\n\033[32m✓ Setup complete!\033[0m")
+    print("\nNext steps:")
+    print("  \033[36m./guardian install\033[0m  - Install as system service (recommended)")
+    print("  \033[36m./guardian start\033[0m    - Start manually")
+    print("  \033[36m./guardian gui\033[0m      - Open dashboard")
+
+
+def install():
+    """Install as system service"""
+    print(BANNER)
+    ensure_venv()
+
+    os.chdir(CODE_DIR)
+    subprocess.run([str(VENV_PYTHON), "installer.py", "install"])
+
+
+def uninstall():
+    """Remove system service"""
+    ensure_venv()
+
+    os.chdir(CODE_DIR)
+    subprocess.run([str(VENV_PYTHON), "installer.py", "uninstall"])
+
+
+def start(port=6660):
+    """Start the proxy manually"""
+    print(BANNER)
+    ensure_venv()
+
+    print(f"\033[32m🛡️  Starting PrivacyGuardian on port {port}...\033[0m\n")
+
+    os.chdir(CODE_DIR)
+    subprocess.run([str(VENV_PYTHON), "guardian_proxy.py"])
+
+
+def stop():
+    """Stop the proxy service"""
+    result = subprocess.run(
+        ["systemctl", "--user", "stop", "privacyguardian"],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print("✓ PrivacyGuardian stopped")
+    else:
+        print("Note: Service not running or not installed")
+        # Try to kill any running proxy
+        subprocess.run(["pkill", "-f", "guardian_proxy.py"], capture_output=True)
+
+
+def status():
+    """Show status"""
+    import urllib.request
+    import json
+
+    print("\n\033[36m=== PrivacyGuardian Status ===\033[0m\n")
+
+    # Check systemd service
+    result = subprocess.run(
+        ["systemctl", "--user", "is-active", "privacyguardian"],
+        capture_output=True, text=True
+    )
+    service_status = result.stdout.strip()
+    service_icon = "✓" if service_status == "active" else "✗"
+    print(f"  {service_icon} Service: {service_status}")
+
+    # Check proxy
+    try:
+        with urllib.request.urlopen("http://localhost:6660/__guardian__/stats", timeout=2) as resp:
+            data = json.loads(resp.read())
+            print(f"  ✓ Proxy: running")
+            print(f"  ✓ Uptime: {data.get('uptime', 'unknown')}")
+            print(f"\n\033[36m=== Protection Stats ===\033[0m\n")
+            print(f"  Requests processed:  {data['requests_processed']}")
+            print(f"  PII items protected: {data['pii_items_protected']}")
+            print(f"  Tokens in vault:     {data['vault']['total_tokens']}")
+
+            by_type = data['vault'].get('by_type', {})
+            if by_type:
+                print(f"\n\033[36m=== By Type ===\033[0m\n")
+                for pii_type, count in sorted(by_type.items(), key=lambda x: -x[1]):
+                    print(f"  {pii_type}: {count}")
+
+    except Exception as e:
+        print(f"  ✗ Proxy: not running")
+
+
+def gui():
+    """Open GUI dashboard"""
+    ensure_venv()
+
+    os.chdir(CODE_DIR)
+    subprocess.Popen(
+        [str(VENV_PYTHON), "gui/dashboard.py"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    print("✓ Dashboard launched")
+
+
+def notify_startup():
+    """Send startup notification (called by autostart)"""
+    ensure_venv()
+
+    os.chdir(CODE_DIR)
+    subprocess.run([str(VENV_PYTHON), "notifications.py", "startup"])
+
+
+def test():
+    """Test PII detection"""
+    print(BANNER)
+    ensure_venv()
+
+    os.chdir(CODE_DIR)
+    subprocess.run([str(VENV_PYTHON), "pii_detector.py"])
+
+
+def stealth():
+    """Full stealth mode installation - zero config protection"""
+    print(BANNER)
+    print("""\033[33m
+╔══════════════════════════════════════════════════════════════════╗
+║                    🥷 STEALTH MODE INSTALLATION                   ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  This will set up TRANSPARENT interception of ALL LLM traffic.  ║
+║  No app configuration needed. It just works.                    ║
+║                                                                  ║
+║  What will be installed:                                         ║
+║    1. Local CA certificate (for HTTPS interception)             ║
+║    2. iptables rules (redirect LLM traffic)                     ║
+║    3. System service (auto-start on boot)                       ║
+║                                                                  ║
+║  You will be asked for sudo password.                           ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+\033[0m""")
+
+    input("Press Enter to continue (Ctrl+C to cancel)...")
+
+    ensure_venv()
+    os.chdir(CODE_DIR)
+
+    print("\n\033[36mStep 1/3: Installing CA certificate...\033[0m")
+    result = subprocess.run([str(VENV_PYTHON), "transparent_proxy.py", "install-ca"])
+    if result.returncode != 0:
+        print("\033[31mFailed to install CA certificate\033[0m")
+        return
+
+    print("\n\033[36mStep 2/3: Setting up iptables rules...\033[0m")
+    result = subprocess.run([str(VENV_PYTHON), "transparent_proxy.py", "install-iptables"])
+    if result.returncode != 0:
+        print("\033[31mFailed to install iptables rules\033[0m")
+        return
+
+    print("\n\033[36mStep 3/3: Installing system service...\033[0m")
+    subprocess.run([str(VENV_PYTHON), "installer.py", "install"])
+
+    print("""\033[32m
+╔══════════════════════════════════════════════════════════════════╗
+║                    ✓ STEALTH MODE ACTIVE                         ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  All LLM traffic is now being intercepted and protected.        ║
+║                                                                  ║
+║  Test it:                                                        ║
+║    1. Open any LLM app (Claude, ChatGPT, etc.)                  ║
+║    2. Type something with PII (email, phone, etc.)              ║
+║    3. Run: ./guardian gui  to see what was protected            ║
+║                                                                  ║
+║  To remove: ./guardian stealth-remove                           ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+\033[0m""")
+
+
+def stealth_remove():
+    """Remove stealth mode completely"""
+    print(BANNER)
+    print("\033[33mRemoving stealth mode...\033[0m\n")
+
+    ensure_venv()
+    os.chdir(CODE_DIR)
+
+    print("  → Removing iptables rules...")
+    subprocess.run([str(VENV_PYTHON), "transparent_proxy.py", "remove-iptables"])
+
+    print("  → Removing system service...")
+    subprocess.run([str(VENV_PYTHON), "installer.py", "uninstall"])
+
+    print("""
+\033[32m✓ Stealth mode removed.\033[0m
+
+Note: The CA certificate is still installed. To remove it:
+  sudo rm /usr/local/share/ca-certificates/privacyguardian-ca.crt
+  sudo update-ca-certificates --fresh
+""")
+
+
+def is_proxy_running():
+    """Check if proxy is running via health endpoint"""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://localhost:6660/__guardian__/health", timeout=2) as resp:
+            return resp.status == 200
+    except:
+        return False
+
+
+def enable():
+    """Enable protection - start proxy and set flag"""
+    ensure_venv()
+
+    # Ensure config dir exists
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Start proxy if not running
+    if not is_proxy_running():
+        print("  → Starting proxy...", end=" ", flush=True)
+        os.chdir(CODE_DIR)
+        subprocess.Popen(
+            [str(VENV_PYTHON), "guardian_proxy.py"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        # Wait for proxy to start
+        import time
+        for _ in range(10):
+            time.sleep(0.5)
+            if is_proxy_running():
+                print("✓")
+                break
+        else:
+            print("\033[31m✗ Failed to start\033[0m")
+            return
+    else:
+        print("  → Proxy already running ✓")
+
+    # Create flag file
+    FLAG_FILE.touch()
+    print("  → Protection flag set ✓")
+
+    print("""
+\033[32m╔═══════════════════════════════════════════════════════════╗
+║              ✓ PROTECTION ENABLED                         ║
+╠═══════════════════════════════════════════════════════════╣
+║  Your LLM apps will now route through PrivacyGuardian.    ║
+║                                                           ║
+║  Make sure you have the alias set up in ~/.bashrc:        ║
+║    alias claude='/path/to/pg-wrapper claude'              ║
+║                                                           ║
+║  To disable: ./guardian disable                           ║
+╚═══════════════════════════════════════════════════════════╝
+\033[0m""")
+
+
+def disable():
+    """Disable protection - stop proxy and remove flag"""
+    # Remove flag file
+    if FLAG_FILE.exists():
+        FLAG_FILE.unlink()
+        print("  → Protection flag removed ✓")
+    else:
+        print("  → Protection was already disabled")
+
+    # Stop proxy
+    print("  → Stopping proxy...", end=" ", flush=True)
+    stop()
+
+    print("""
+\033[33m╔═══════════════════════════════════════════════════════════╗
+║              PROTECTION DISABLED                          ║
+╠═══════════════════════════════════════════════════════════╣
+║  LLM apps will now connect directly (no PII filtering).   ║
+║                                                           ║
+║  To re-enable: ./guardian enable                          ║
+╚═══════════════════════════════════════════════════════════╝
+\033[0m""")
+
+
+def toggle():
+    """Toggle protection on/off"""
+    if FLAG_FILE.exists():
+        print("\033[33mProtection is ON → turning OFF\033[0m\n")
+        disable()
+    else:
+        print("\033[32mProtection is OFF → turning ON\033[0m\n")
+        enable()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="PrivacyGuardian - Universal LLM PII Protection",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=USAGE_HELP
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # Commands
+    subparsers.add_parser("setup", help="Set up Python environment")
+    subparsers.add_parser("install", help="Install as system service")
+    subparsers.add_parser("uninstall", help="Remove system service")
+
+    start_parser = subparsers.add_parser("start", help="Start proxy manually")
+    start_parser.add_argument("-p", "--port", type=int, default=6660)
+
+    subparsers.add_parser("stop", help="Stop the proxy")
+    subparsers.add_parser("status", help="Show status")
+    subparsers.add_parser("gui", help="Open GUI dashboard")
+    subparsers.add_parser("test", help="Test PII detection")
+    subparsers.add_parser("notify-startup", help="Send startup notification")
+
+    # Protection toggle commands
+    subparsers.add_parser("enable", help="Enable protection (start proxy + set flag)")
+    subparsers.add_parser("disable", help="Disable protection (stop proxy + remove flag)")
+    subparsers.add_parser("toggle", help="Toggle protection on/off")
+
+    # Stealth mode commands
+    subparsers.add_parser("stealth", help="Full stealth install (zero config)")
+    subparsers.add_parser("stealth-remove", help="Remove stealth mode")
+
+    args = parser.parse_args()
+
+    commands = {
+        "setup": setup,
+        "install": install,
+        "uninstall": uninstall,
+        "start": lambda: start(getattr(args, 'port', 6660)),
+        "stop": stop,
+        "status": status,
+        "gui": gui,
+        "test": test,
+        "notify-startup": notify_startup,
+        "enable": enable,
+        "disable": disable,
+        "toggle": toggle,
+        "stealth": stealth,
+        "stealth-remove": stealth_remove,
+    }
+
+    if args.command in commands:
+        commands[args.command]()
+    else:
+        print(BANNER)
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

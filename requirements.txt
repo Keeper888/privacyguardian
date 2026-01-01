@@ -1,0 +1,13 @@
+# PrivacyGuardian Dependencies
+# Minimal footprint for maximum performance
+
+# Core proxy
+fastapi>=0.104.0
+uvicorn>=0.24.0
+httpx>=0.25.0
+
+# Encryption
+cryptography>=41.0.0
+
+# Optional: Tiny LLM for validation (uncomment if needed)
+# llama-cpp-python>=0.2.0
