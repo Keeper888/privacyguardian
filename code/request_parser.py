@@ -7,8 +7,8 @@ Extracts message content from various JSON structures.
 
 import json
 import re
-from typing import Any, Dict, List, Tuple, Callable, Optional
-from llm_endpoints import LLMProvider, get_provider_for_domain
+from typing import Any, List, Tuple, Callable
+from llm_endpoints import LLMProvider
 
 
 class RequestParser:
@@ -87,7 +87,7 @@ class RequestParser:
             for i, item in enumerate(data):
                 new_path = f"{current_path}[{i}]"
                 # Also match wildcard [*]
-                wildcard_path = re.sub(r'\[\d+\]', '[*]', new_path)
+                re.sub(r'\[\d+\]', '[*]', new_path)
                 modified, count = self._protect_json_recursive(item, message_paths, new_path)
                 result.append(modified)
                 pii_count += count

@@ -8,7 +8,6 @@ Uses TinyLlama (1.1B) or Phi-2 (2.7B) - minimal resource usage.
 Can run on CPU with ~2GB RAM overhead.
 """
 
-import os
 import json
 import threading
 import queue

@@ -7,7 +7,6 @@ and decrypts tokens in responses so you see the original data locally.
 Supports: Anthropic, OpenAI, Google, Azure, Mistral, Cohere, Groq, and more.
 """
 
-import asyncio
 import json
 import os
 import sqlite3
@@ -24,10 +23,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 import uvicorn
 
-from pii_detector import PIIDetector, PIIMatch, PIIType
+from pii_detector import PIIDetector, PIIType
 from llm_endpoints import (
     LLMProvider, LLM_PROVIDERS,
-    get_provider_for_domain, get_all_domains
+    get_provider_for_domain
 )
 from request_parser import RequestParser, StreamingParser
 

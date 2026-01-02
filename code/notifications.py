@@ -7,7 +7,6 @@ System notifications for startup, PII blocking, and errors.
 import subprocess
 import shutil
 from typing import Optional
-from pathlib import Path
 
 
 class NotificationManager:

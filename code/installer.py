@@ -5,13 +5,11 @@ Sets up systemd service, iptables rules, and desktop integration.
 """
 
 import os
-import sys
 import subprocess
 import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
-from llm_endpoints import get_domains_for_iptables
 
 
 class Installer:
@@ -52,7 +50,7 @@ class Installer:
                 print(f"✗ ({e})")
                 return False
 
-        print(f"""
+        print("""
 ╔══════════════════════════════════════════════════════════════════╗
 ║                  ✓ Installation Complete!                        ║
 ╠══════════════════════════════════════════════════════════════════╣

@@ -8,14 +8,9 @@ Uses iptables + local CA certificate for HTTPS interception.
 """
 
 import os
-import ssl
-import socket
-import asyncio
-import json
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
@@ -23,9 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
-from llm_endpoints import get_provider_for_domain, get_domains_for_iptables, LLM_PROVIDERS
-from pii_detector import PIIDetector
-from guardian_proxy import TokenVault, events
+from llm_endpoints import get_domains_for_iptables
 
 
 class CertificateAuthority:
@@ -317,10 +310,9 @@ def install_ca_certificate():
     print("Installing CA certificate system-wide...\n")
 
     import subprocess
-    import shutil
 
     # Copy to system CA store
-    dest = f"/usr/local/share/ca-certificates/privacyguardian-ca.crt"
+    dest = "/usr/local/share/ca-certificates/privacyguardian-ca.crt"
 
     result = subprocess.run(
         ["sudo", "cp", ca_path, dest],
@@ -341,7 +333,7 @@ def install_ca_certificate():
         print("✓ CA certificate installed system-wide")
         print("\nBrowsers may need manual import:")
         print(f"  Firefox: Settings → Privacy → Certificates → Import → {ca_path}")
-        print(f"  Chrome: Settings → Privacy → Security → Manage certificates → Import")
+        print("  Chrome: Settings → Privacy → Security → Manage certificates → Import")
         return True
     else:
         print(f"Error updating certificates: {result.stderr}")

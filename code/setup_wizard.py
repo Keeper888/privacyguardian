@@ -265,7 +265,7 @@ exec {launch_cmd} "$@"
                 launcher_path.write_text(launcher_script)
                 launcher_path.chmod(0o755)
                 created.append(app)
-            except Exception as e:
+            except Exception:
                 failed.append(app)
 
         return created, failed

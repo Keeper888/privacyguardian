@@ -10,7 +10,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, GLib, Gio, Pango, Gdk
+from gi.repository import Gtk, Adw, GLib, Gio, Gdk
 import json
 import urllib.request
 import subprocess
@@ -19,7 +19,6 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, List
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -353,7 +352,7 @@ class DashboardWindow(Adw.ApplicationWindow):
                     self._show_toast("Protection enabled and verified!")
                     self._refresh_all()
                     return False  # Stop timeout
-        except Exception as e:
+        except Exception:
             pass
 
         self._show_toast("Warning: Proxy may not be running correctly")
@@ -376,13 +375,8 @@ class DashboardWindow(Adw.ApplicationWindow):
         """Run a test request through the proxy"""
         try:
             import urllib.request
-            import json
 
             # Create test data with fake PII
-            test_data = {
-                "test": True,
-                "message": "Test email: test123@example.com, phone: 555-123-4567"
-            }
 
             req = urllib.request.Request(
                 f"{self.proxy_url}/__guardian__/health",
@@ -390,7 +384,7 @@ class DashboardWindow(Adw.ApplicationWindow):
             )
 
             with urllib.request.urlopen(req, timeout=5) as resp:
-                result = resp.read().decode()
+                resp.read().decode()
 
             GLib.idle_add(self._show_toast, "Test completed! Proxy is working.")
             GLib.idle_add(self._refresh_all)
@@ -503,7 +497,7 @@ class DashboardWindow(Adw.ApplicationWindow):
 
             GLib.idle_add(self._update_ui, stats, activity.get("activity", []), True)
 
-        except Exception as e:
+        except Exception:
             GLib.idle_add(self._update_ui, {}, [], False)
 
     def _refresh_data(self):
@@ -935,14 +929,14 @@ class SetupDialog(Adw.Window):
     def _spawn_reload_terminal(self, config_file: str):
         """Open terminal with shell reload command ready - user just presses Enter"""
         shell = os.environ.get('SHELL', '/bin/bash')
-        config_name = Path(config_file).name
+        Path(config_file).name
 
         if 'zsh' in shell:
-            reload_cmd = f'source ~/.zshrc'
+            reload_cmd = 'source ~/.zshrc'
         elif 'fish' in shell:
-            reload_cmd = f'source ~/.config/fish/config.fish'
+            reload_cmd = 'source ~/.config/fish/config.fish'
         else:
-            reload_cmd = f'source ~/.bashrc'
+            reload_cmd = 'source ~/.bashrc'
 
         # Script to show in terminal
         script = f'''

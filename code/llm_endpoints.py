@@ -6,7 +6,6 @@ Configuration for all supported LLM API providers.
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict
-import re
 
 
 @dataclass
