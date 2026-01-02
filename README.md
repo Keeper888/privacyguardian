@@ -51,6 +51,18 @@ make                            # build C crypto library
 ./guardian gui
 ```
 
+### Want an easier install? Use the Python version
+
+```bash
+git clone https://github.com/Keeper888/privacyguardian.git
+cd privacyguardian
+git checkout python-stable   # no C build needed
+./guardian setup
+./guardian gui
+```
+
+The `python-stable` branch uses pure Python encryption (Fernet/AES). No gcc, no make, no libsodium. Just Python.
+
 **In the GUI:**
 1. Click **Setup** → Select apps → **Apply**
 2. Press **Enter** in the terminal that opens
