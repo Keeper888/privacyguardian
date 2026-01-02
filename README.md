@@ -61,7 +61,7 @@ git checkout python-stable   # no C build needed
 ./guardian gui
 ```
 
-The `python-stable` branch uses pure Python encryption (Fernet/AES). No gcc, no make, no libsodium. Just Python.
+The `python-stable` branch uses pure Python encryption (Fernet/AES).
 
 **In the GUI:**
 1. Click **Setup** → Select apps → **Apply**
