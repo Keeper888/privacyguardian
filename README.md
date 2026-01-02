@@ -7,6 +7,7 @@ Your emails, passwords, medical records - encrypted before they leave your compu
 <p align="center">
   <img src="images/gui-dashboard.png" alt="PrivacyGuardian Dashboard" width="700"/>
 </p>
+<p align="center"><code>./guardian gui</code></p>
 
 <p align="center">
   <img src="images/cli-demo.png" alt="CLI Protection Demo" width="700"/>
@@ -14,22 +15,16 @@ Your emails, passwords, medical records - encrypted before they leave your compu
 
 ---
 
-**Developer Notes**
+**Roadmap**
 
-Did you take too much cocaine and you started to acting reckless in vibecoding? Not to worry, PrivacyGuardian gets you covered!
+| Stars | What's Next |
+|-------|-------------|
+| **10** | Multi-platform support (tested on ARM64, expanding to x86_64) |
+| **25** | Semantic PII detection (context-aware, not just regex patterns) |
+| **50** | At this point I am hallucinating so I first need to go to a psychiatrist and check if I am ok then if 50 stars is true then I have to keep developing, I don't know what we do, we see the issues you guys open and I'll fix them |
+| **100** | Mobile support (iOS/Android companion apps) |
 
-**How to get free updates**
-
-| Stars | What You Get |
-|-------|--------------|
-| **10** | I see you like it, this push me to develop for multiplatform because at the moment is Linux arm64 but it should work on linux too, or just fork it and fuck it. |
-| **20 or Blow me** | 20 stars or you blow me gives the same dopamine, please note that if you want to blow me we have to arrange it so please use stars, anyway I'll develop a solution that is meaning oriented rather than hard coded PII |
-| **50** | At this point I am hallucinating so I first need to go to a psyachiatrist and check if I am ok then if 50 stars is true then I have to keep developing, I don't know what we do, we see the issues you guys open and I'll fix them |
-| **100 or double blow** | I'm not sure how we can do one sausage two mouths but we find a way so please use stars I beg you, and then I develop a solution for iOS/Android too |
-
-reality check: nobody is going to use it, if yes probably they download it without even fork it and copy in a private repo, gg.
-
-Please note: I've only tested on claude code and antigravity, please just open an issue if it doesn't work but it should but if it doesn't just let me know!
+Currently tested on Claude Code and Antigravity. Something broken? Open an issue.
 
 ---
 
