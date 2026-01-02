@@ -175,6 +175,11 @@ class DashboardWindow(Adw.ApplicationWindow):
         open_vault_btn.connect("clicked", self._on_open_vault)
         actions_row.append(open_vault_btn)
 
+        access_vault_btn = Gtk.Button(label="🔑 Access Vault")
+        access_vault_btn.set_tooltip_text("View and copy your protected data")
+        access_vault_btn.connect("clicked", self._on_access_vault)
+        actions_row.append(access_vault_btn)
+
         # ===================
         # STATS CARDS
         # ===================
@@ -406,6 +411,11 @@ class DashboardWindow(Adw.ApplicationWindow):
             subprocess.Popen(["xdg-open", str(vault_path)])
         else:
             self._show_toast("Vault folder doesn't exist yet")
+
+    def _on_access_vault(self, button):
+        """Open the vault viewer to see and copy protected data"""
+        dialog = VaultViewerDialog(self)
+        dialog.present()
 
     # ===================
     # SETUP WIZARD
@@ -982,6 +992,316 @@ exec {shell}
 
         # No terminal found - return False
         return False
+
+
+class VaultViewerDialog(Adw.Window):
+    """Dialog to view and copy protected data from the vault"""
+
+    def __init__(self, parent):
+        super().__init__()
+        self.parent_window = parent
+        self.token_data = []  # List of (token_id, pii_type, decrypted_value, created_at)
+
+        self.set_title("Access Vault")
+        self.set_default_size(700, 600)
+        self.set_modal(True)
+        self.set_transient_for(parent)
+
+        self._build_ui()
+        self._load_vault_data()
+
+    def _build_ui(self):
+        """Build the vault viewer UI"""
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.set_content(main_box)
+
+        # Header
+        header = Adw.HeaderBar()
+        header.set_title_widget(Gtk.Label(label="🔑 Your Protected Data"))
+
+        # Refresh button
+        refresh_btn = Gtk.Button(icon_name="view-refresh-symbolic")
+        refresh_btn.set_tooltip_text("Refresh")
+        refresh_btn.connect("clicked", lambda _: self._load_vault_data())
+        header.pack_end(refresh_btn)
+
+        main_box.append(header)
+
+        # Warning banner
+        warning_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        warning_box.set_margin_start(16)
+        warning_box.set_margin_end(16)
+        warning_box.set_margin_top(8)
+        warning_box.set_margin_bottom(8)
+
+        warning_icon = Gtk.Label(label="⚠️")
+        warning_box.append(warning_icon)
+
+        warning_label = Gtk.Label(
+            label="This shows your actual sensitive data. Be careful when revealing values."
+        )
+        warning_label.add_css_class("dim-label")
+        warning_box.append(warning_label)
+
+        main_box.append(warning_box)
+
+        # Search box
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        search_box.set_margin_start(16)
+        search_box.set_margin_end(16)
+        search_box.set_margin_bottom(8)
+
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("Search by type or token ID...")
+        self.search_entry.set_hexpand(True)
+        self.search_entry.connect("search-changed", self._on_search_changed)
+        search_box.append(self.search_entry)
+
+        main_box.append(search_box)
+
+        # Scrollable list
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        main_box.append(scroll)
+
+        self.vault_list = Gtk.ListBox()
+        self.vault_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.vault_list.add_css_class("boxed-list")
+        self.vault_list.set_margin_start(16)
+        self.vault_list.set_margin_end(16)
+        self.vault_list.set_margin_bottom(16)
+        scroll.set_child(self.vault_list)
+
+        # Status bar
+        self.status_label = Gtk.Label(label="Loading...")
+        self.status_label.add_css_class("dim-label")
+        self.status_label.set_margin_bottom(8)
+        main_box.append(self.status_label)
+
+    def _load_vault_data(self):
+        """Load and decrypt all tokens from the vault"""
+        threading.Thread(target=self._fetch_vault_data, daemon=True).start()
+
+    def _fetch_vault_data(self):
+        """Fetch vault data in background thread"""
+        import sqlite3
+
+        vault_path = Path.home() / ".privacyguardian" / "vault.db"
+        if not vault_path.exists():
+            GLib.idle_add(self._show_empty_state, "No vault found")
+            return
+
+        try:
+            # Import crypto
+            sys.path.insert(0, str(CODE_DIR))
+            from crypto_native import CryptoNative
+            crypto = CryptoNative()
+
+            conn = sqlite3.connect(str(vault_path))
+            cursor = conn.execute(
+                "SELECT token_id, pii_type, encrypted_value, created_at FROM tokens ORDER BY created_at DESC"
+            )
+
+            token_data = []
+            for row in cursor.fetchall():
+                token_id, pii_type, encrypted_value, created_at = row
+
+                # Decrypt - handle nested tokens
+                try:
+                    encrypted_str = encrypted_value.decode('utf-8') if isinstance(encrypted_value, bytes) else encrypted_value
+                    decrypted = self._decrypt_recursive(crypto, conn, encrypted_str)
+                except Exception:
+                    decrypted = "[Decryption failed]"
+
+                token_data.append((token_id, pii_type, decrypted, created_at))
+
+            conn.close()
+            GLib.idle_add(self._update_vault_list, token_data)
+
+        except Exception as e:
+            GLib.idle_add(self._show_empty_state, f"Error: {e}")
+
+    def _decrypt_recursive(self, crypto, conn, encrypted_token, depth=0):
+        """Decrypt a token, following nested tokens up to 5 levels deep"""
+        if depth > 5:
+            return "[Max depth reached]"
+
+        try:
+            result = crypto.decrypt_value_only(encrypted_token)
+            if not result:
+                return "[Decryption failed]"
+
+            # Check if result is another token
+            if result.startswith("◈PG:") and result.endswith("◈"):
+                # Look up this token in the database
+                cursor = conn.execute(
+                    "SELECT encrypted_value FROM tokens WHERE token_id = ?", (result,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    nested_encrypted = row[0].decode('utf-8') if isinstance(row[0], bytes) else row[0]
+                    return self._decrypt_recursive(crypto, conn, nested_encrypted, depth + 1)
+                else:
+                    return result  # Token not in vault, return as-is
+
+            return result
+        except Exception:
+            return "[Decryption error]"
+
+    def _update_vault_list(self, token_data):
+        """Update the vault list with decrypted data"""
+        self.token_data = token_data
+
+        # Clear existing rows
+        while True:
+            row = self.vault_list.get_row_at_index(0)
+            if row:
+                self.vault_list.remove(row)
+            else:
+                break
+
+        for token_id, pii_type, decrypted, created_at in token_data:
+            row = self._create_vault_row(token_id, pii_type, decrypted, created_at)
+            self.vault_list.append(row)
+
+        self.status_label.set_text(f"{len(token_data)} items in vault")
+
+    def _create_vault_row(self, token_id, pii_type, decrypted, created_at):
+        """Create a row for a vault item"""
+        row = Gtk.ListBoxRow()
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        main_box.set_margin_start(12)
+        main_box.set_margin_end(12)
+        main_box.set_margin_top(8)
+        main_box.set_margin_bottom(8)
+        row.set_child(main_box)
+
+        # Top row: type badge and token ID
+        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        main_box.append(top_row)
+
+        # Type badge
+        type_label = Gtk.Label(label=pii_type)
+        type_label.add_css_class("pii-type")
+        type_label.set_width_chars(12)
+        type_label.set_xalign(0)
+        top_row.append(type_label)
+
+        # Token ID (truncated)
+        short_id = token_id[4:20] + "..." if len(token_id) > 20 else token_id
+        id_label = Gtk.Label(label=short_id)
+        id_label.add_css_class("dim-label")
+        id_label.set_hexpand(True)
+        id_label.set_xalign(0)
+        top_row.append(id_label)
+
+        # Timestamp
+        try:
+            dt = datetime.fromisoformat(created_at)
+            time_str = dt.strftime("%Y-%m-%d %H:%M")
+        except:
+            time_str = created_at[:16] if created_at else ""
+        time_label = Gtk.Label(label=time_str)
+        time_label.add_css_class("timestamp")
+        top_row.append(time_label)
+
+        # Bottom row: masked value + reveal/copy buttons
+        bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        main_box.append(bottom_row)
+
+        # Value label (masked by default)
+        masked_value = self._mask_value(decrypted)
+        value_label = Gtk.Label(label=masked_value)
+        value_label.set_hexpand(True)
+        value_label.set_xalign(0)
+        value_label.set_selectable(True)
+        value_label.add_css_class("monospace")
+        bottom_row.append(value_label)
+
+        # Store the real value
+        row.real_value = decrypted
+        row.value_label = value_label
+        row.is_revealed = False
+
+        # Reveal button
+        reveal_btn = Gtk.Button(label="Reveal")
+        reveal_btn.set_tooltip_text("Show the actual value")
+        reveal_btn.connect("clicked", lambda b: self._toggle_reveal(row, b))
+        bottom_row.append(reveal_btn)
+        row.reveal_btn = reveal_btn
+
+        # Copy button
+        copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
+        copy_btn.set_tooltip_text("Copy to clipboard")
+        copy_btn.connect("clicked", lambda b: self._copy_value(decrypted))
+        bottom_row.append(copy_btn)
+
+        return row
+
+    def _mask_value(self, value):
+        """Mask a value for display"""
+        if not value or len(value) < 4:
+            return "****"
+        return value[:2] + "*" * min(len(value) - 4, 20) + value[-2:]
+
+    def _toggle_reveal(self, row, button):
+        """Toggle between masked and revealed value"""
+        if row.is_revealed:
+            row.value_label.set_text(self._mask_value(row.real_value))
+            button.set_label("Reveal")
+            row.is_revealed = False
+        else:
+            row.value_label.set_text(row.real_value)
+            button.set_label("Hide")
+            row.is_revealed = True
+
+    def _copy_value(self, value):
+        """Copy value to clipboard"""
+        clipboard = Gdk.Display.get_default().get_clipboard()
+        clipboard.set(value)
+        self.status_label.set_text("Copied to clipboard!")
+        GLib.timeout_add(2000, lambda: self.status_label.set_text(f"{len(self.token_data)} items in vault"))
+
+    def _on_search_changed(self, entry):
+        """Filter the list based on search text"""
+        search_text = entry.get_text().lower()
+
+        # Clear and re-populate with filtered results
+        while True:
+            row = self.vault_list.get_row_at_index(0)
+            if row:
+                self.vault_list.remove(row)
+            else:
+                break
+
+        filtered_count = 0
+        for token_id, pii_type, decrypted, created_at in self.token_data:
+            if search_text in pii_type.lower() or search_text in token_id.lower():
+                row = self._create_vault_row(token_id, pii_type, decrypted, created_at)
+                self.vault_list.append(row)
+                filtered_count += 1
+
+        if search_text:
+            self.status_label.set_text(f"Showing {filtered_count} of {len(self.token_data)} items")
+        else:
+            self.status_label.set_text(f"{len(self.token_data)} items in vault")
+
+    def _show_empty_state(self, message):
+        """Show empty state message"""
+        while True:
+            row = self.vault_list.get_row_at_index(0)
+            if row:
+                self.vault_list.remove(row)
+            else:
+                break
+
+        placeholder = Gtk.Label(label=message)
+        placeholder.set_opacity(0.5)
+        placeholder.set_margin_top(32)
+        placeholder.set_margin_bottom(32)
+        self.vault_list.append(placeholder)
+        self.status_label.set_text("")
 
 
 def main():
