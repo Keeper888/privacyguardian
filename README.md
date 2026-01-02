@@ -1,16 +1,12 @@
 # PrivacyGuardian
 
-**Your entire codebase, protected from AI.**
+**Stop AI from seeing your personal data.**
 
-When AI coding tools scan your files, they see everything — API keys, database credentials, customer data in test fixtures, your personal info in comments. PrivacyGuardian intercepts it all.
+Your emails, passwords, medical records - encrypted before they leave your computer. AI sees tokens, you see your real data.
 
-```
-Your code:     db_password = "hunter2"
-AI sees:       db_password = "◈PG:PASS_a7f2◈"
-You see:       db_password = "hunter2"
-```
-
-**Not just your input — your whole codebase.** Every file the AI reads goes through the proxy.
+> **Goal: Protect your entire codebase, not just your input.**
+>
+> When AI coding tools scan your files, they read everything — API keys in configs, credentials in `.env` files, customer data in test fixtures. We're working to intercept all of it before it leaves your machine. [Track progress](https://github.com/Keeper888/privacyguardian/issues/9)
 
 <p align="center">
   <img src="images/gui-dashboard.png" alt="PrivacyGuardian Dashboard" width="700"/>
@@ -90,9 +86,9 @@ The `python-stable` branch uses pure Python encryption (Fernet/AES).
 ## How it works
 
 ```
-You type:  "My email is john@gmail.com"
+You type:  "My email is john@example.com"
 AI sees:   "My email is ◈PG:EMAI_a7f2◈"
-You see:   "My email is john@gmail.com"
+You see:   "My email is john@example.com"
 ```
 
 AI can still help you. It just never sees your real data.
