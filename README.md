@@ -113,10 +113,17 @@ Or add `~/.local/bin` to your PATH, then use these from anywhere.
 
 ## Requirements
 
+**System:**
 - Linux (Ubuntu, Debian, Fedora, Arch)
+
+**Build (C crypto):**
+- gcc
+- make
+- libsodium-dev (`sudo apt install libsodium-dev`)
+
+**Runtime (proxy server):**
 - Python 3.8+
-- libsodium (`sudo apt install libsodium-dev`)
-- gcc + make (for building C crypto library)
+- pip packages (installed via `./guardian setup`)
 
 ---
 
