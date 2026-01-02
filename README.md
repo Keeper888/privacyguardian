@@ -40,10 +40,14 @@ Please note: I've only tested on claude code and antigravity, please just open a
 git clone https://github.com/Keeper888/privacyguardian.git
 cd privacyguardian
 
-# 2. Install
+# 2. Install dependencies + build
+sudo apt install libsodium-dev  # encryption library
+make                            # build C crypto library
+
+# 3. Setup
 ./guardian setup
 
-# 3. Open GUI
+# 4. Open GUI
 ./guardian gui
 ```
 
@@ -111,6 +115,8 @@ Or add `~/.local/bin` to your PATH, then use these from anywhere.
 
 - Linux (Ubuntu, Debian, Fedora, Arch)
 - Python 3.8+
+- libsodium (`sudo apt install libsodium-dev`)
+- gcc + make (for building C crypto library)
 
 ---
 
