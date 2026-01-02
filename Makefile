@@ -5,7 +5,7 @@ CFLAGS = -O3 -fPIC -Wall -Wextra
 LDFLAGS = -shared
 LIBS = -lsodium
 
-SRC_DIR = src
+SRC_DIR = code
 BUILD_DIR = build
 
 .PHONY: all clean install deps test

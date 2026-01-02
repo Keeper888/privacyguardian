@@ -17,8 +17,8 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from cryptography.fernet import Fernet
 import httpx
+from crypto_native import CryptoNative
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 import uvicorn
@@ -71,22 +71,15 @@ class TokenVault:
         self.vault_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.vault_dir, 0o700)
 
-        self.key_file = self.vault_dir / "master.key"
         self.db_file = self.vault_dir / "vault.db"
+        self.key_file = self.vault_dir / "pg_master.key"
 
-        self._init_key()
+        self._init_crypto()
         self._init_db()
 
-    def _init_key(self):
-        if self.key_file.exists():
-            with open(self.key_file, 'rb') as f:
-                self.master_key = f.read()
-        else:
-            self.master_key = Fernet.generate_key()
-            with open(self.key_file, 'wb') as f:
-                f.write(self.master_key)
-            os.chmod(self.key_file, 0o600)
-        self.cipher = Fernet(self.master_key)
+    def _init_crypto(self):
+        """Initialize the C crypto library (XChaCha20-Poly1305 via libsodium)"""
+        self.crypto = CryptoNative(key_path=str(self.key_file))
 
     def _init_db(self):
         self.conn = sqlite3.connect(str(self.db_file), check_same_thread=False)
@@ -134,7 +127,7 @@ class TokenVault:
             self.conn.commit()
         else:
             # New token - insert and log activity
-            encrypted = self.cipher.encrypt(value.encode())
+            encrypted = self.crypto.encrypt(value, pii_type.value).encode('utf-8')
             self.conn.execute(
                 "INSERT INTO tokens (token_id, pii_type, encrypted_value, created_at, last_used, provider) VALUES (?, ?, ?, ?, ?, ?)",
                 (token_id, pii_type.value, encrypted, datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), provider)
@@ -165,7 +158,8 @@ class TokenVault:
         row = cursor.fetchone()
         if row:
             try:
-                return self.cipher.decrypt(row[0]).decode()
+                encrypted_token = row[0].decode('utf-8') if isinstance(row[0], bytes) else row[0]
+                return self.crypto.decrypt_value_only(encrypted_token)
             except Exception:
                 return None
         return None
@@ -175,7 +169,10 @@ class TokenVault:
         result = {}
         for token_id, encrypted in cursor.fetchall():
             try:
-                result[token_id] = self.cipher.decrypt(encrypted).decode()
+                encrypted_token = encrypted.decode('utf-8') if isinstance(encrypted, bytes) else encrypted
+                value = self.crypto.decrypt_value_only(encrypted_token)
+                if value:
+                    result[token_id] = value
             except Exception:
                 continue
         return result

@@ -6,8 +6,10 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 httpx>=0.25.0
 
-# Encryption
+# TLS certificate generation (transparent proxy)
 cryptography>=41.0.0
+
+# Note: PII encryption uses libsodium (C library, not pip)
 
 # Optional: Tiny LLM for validation (uncomment if needed)
 # llama-cpp-python>=0.2.0
