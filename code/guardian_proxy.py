@@ -109,7 +109,7 @@ class TokenVault:
         self.conn.commit()
         os.chmod(self.db_file, 0o600)
 
-    def encrypt_pii(self, value: str, pii_type: PIIType, provider: str = None) -> str:
+    def encrypt_pii(self, value: str, pii_type: PIIType, provider: str = None) -> tuple[str, bool]:
         value_hash = hashlib.sha256(value.encode()).hexdigest()[:12]
         token_id = f"◈PG:{pii_type.value[:4]}_{value_hash}◈"
 
@@ -239,6 +239,8 @@ class PrivacyGuardianProxy:
 
     def protect_text(self, text: str, provider: str = None) -> str:
         """Detect PII in text and replace with encrypted tokens"""
+        if not text:
+            return text or ""
         matches = self.detector.detect(text)
         if not matches:
             return text
