@@ -1,8 +1,16 @@
 # PrivacyGuardian
 
-**Stop AI from seeing your personal data.**
+**Your entire codebase, protected from AI.**
 
-Your emails, passwords, medical records - encrypted before they leave your computer. AI sees tokens, you see your real data.
+When AI coding tools scan your files, they see everything — API keys, database credentials, customer data in test fixtures, your personal info in comments. PrivacyGuardian intercepts it all.
+
+```
+Your code:     db_password = "hunter2"
+AI sees:       db_password = "◈PG:PASS_a7f2◈"
+You see:       db_password = "hunter2"
+```
+
+**Not just your input — your whole codebase.** Every file the AI reads goes through the proxy.
 
 <p align="center">
   <img src="images/gui-dashboard.png" alt="PrivacyGuardian Dashboard" width="700"/>

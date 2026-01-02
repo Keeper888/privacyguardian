@@ -75,6 +75,27 @@ def ensure_venv():
         sys.exit(1)
 
 
+# GUI apps to create launchers for
+GUI_APPS = ['antigravity', 'cursor', 'windsurf', 'zed']
+
+
+def install_gui_launchers():
+    """Create launcher scripts in ~/.local/bin/ for GUI apps"""
+    local_bin = Path.home() / ".local" / "bin"
+    local_bin.mkdir(parents=True, exist_ok=True)
+
+    gui_launcher = GUARDIAN_DIR / "gui-launcher"
+
+    for app in GUI_APPS:
+        launcher_path = local_bin / f"{app}-protected"
+        launcher_content = f'''#!/bin/bash
+# PrivacyGuardian protected launcher for {app}
+exec "{gui_launcher}" {app} "$@"
+'''
+        launcher_path.write_text(launcher_content)
+        launcher_path.chmod(0o755)
+
+
 def setup():
     """Set up PrivacyGuardian environment"""
     print(BANNER)
@@ -106,6 +127,11 @@ def setup():
         [str(VENV_PYTHON), "-m", "pip", "install", "-q", "PyGObject"],
         capture_output=True
     )
+    print("✓")
+
+    # Install GUI app launchers
+    print("  → Installing GUI app launchers...", end=" ", flush=True)
+    install_gui_launchers()
     print("✓")
 
     print("\n\033[32m✓ Setup complete!\033[0m")
