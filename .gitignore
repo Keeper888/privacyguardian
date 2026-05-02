@@ -18,6 +18,8 @@ build/
 *.key
 vault.db
 pg_master.key
+.env
+agent/.env
 
 # IDE
 .vscode/
