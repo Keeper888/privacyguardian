@@ -92,25 +92,74 @@ function renderMatches(regexHits, semanticHits) {
   }
 }
 
+function renderSuggestions(text, suggestions) {
+  const ul = $("suggestions");
+  ul.innerHTML = "";
+  if (!suggestions || suggestions.length === 0) {
+    ul.innerHTML = '<li class="empty">no extra suggestions — looks clean to the agent</li>';
+    return;
+  }
+  for (const s of suggestions) {
+    const li = document.createElement("li");
+    li.className = "suggestion";
+    li.innerHTML = `
+      <span class="span">"${escapeHtml(s.text)}"</span>
+      <span class="label">${escapeHtml(s.label)}</span>
+      <span class="score">${s.score}</span>
+      <button data-text="${escapeHtml(s.text)}" data-label="${escapeHtml(s.label.toUpperCase().replace(/\s+/g, "_"))}">Remember</button>
+    `;
+    li.querySelector("button").addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      btn.disabled = true;
+      btn.textContent = "saving…";
+      try {
+        await fetch("/correct", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: btn.dataset.label,
+            example: btn.dataset.text,
+            context: "agent-suggested",
+            reason: `Flagged by local NER as "${s.label}" (score ${s.score})`,
+          }),
+        });
+        li.classList.add("accepted");
+        btn.textContent = "remembered ✓";
+        refreshStats();
+      } catch (err) {
+        btn.textContent = "error";
+      }
+    });
+    ul.appendChild(li);
+  }
+}
+
 async function onScan() {
   const text = $("scan-input").value.trim();
   if (!text) return;
   const btn = $("scan-btn");
   btn.disabled = true;
   btn.textContent = "Scanning…";
+  $("suggestions").innerHTML = '<li class="empty">agent thinking…</li>';
+  $("scan-output").classList.remove("hidden");
   try {
-    const r = await fetch("/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    const j = await r.json();
-    $("redacted").innerHTML = renderRedacted(text, j.regex_matches, j.semantic_matches);
-    renderMatches(j.regex_matches, j.semantic_matches);
-    $("scan-output").classList.remove("hidden");
+    const [scanResp, suggestResp] = await Promise.all([
+      fetch("/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).then((r) => r.json()),
+      fetch("/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).then((r) => r.json()),
+    ]);
+    $("redacted").innerHTML = renderRedacted(text, scanResp.regex_matches, scanResp.semantic_matches);
+    renderMatches(scanResp.regex_matches, scanResp.semantic_matches);
+    renderSuggestions(text, suggestResp.suggestions);
   } catch (e) {
     $("redacted").textContent = "error: " + e.message;
-    $("scan-output").classList.remove("hidden");
   } finally {
     btn.disabled = false;
     btn.textContent = "Scan";

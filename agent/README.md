@@ -8,9 +8,10 @@ PrivacyGuardian (the base project, built Jan 2026) catches PII via static regex.
 
 Guardian Agent adds:
 
+- **TinyML suggester** — local zero-shot NER (GLiNER, ~165MB) that proactively flags potentially sensitive spans the regex misses. Runs entirely on-device. *No external API call ever sees your text.*
 - **Vector memory** in MongoDB Atlas — semantic record of what you've marked sensitive
-- **Learning loop** — one correction becomes a rule that catches every variant
-- **Cross-runtime intent** — same memory shields any agent (Claude Code, OpenClaw, …) talking on your behalf
+- **Learning loop** — one click on a suggestion → rule stored → every variant gets caught
+- **Cross-runtime intent** — same memory shields any agent talking on your behalf
 
 ## Run the demo
 
@@ -26,9 +27,11 @@ python -m agent.demo.run_demo
 
 ```bash
 python -m agent.learning.server
-# POST http://127.0.0.1:4180/correct  {"label","example","context","reason"}
-# POST http://127.0.0.1:4180/scan     {"text"}
-# GET  http://127.0.0.1:4180/stats
+# Web UI:  http://127.0.0.1:4180
+# POST    /correct   {"label","example","context","reason"}
+# POST    /scan      {"text"}
+# POST    /suggest   {"text","labels?":[...]}     ← TinyML agent
+# GET     /stats
 ```
 
 ## Atlas vector index

@@ -13,6 +13,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "code"))
 
 from agent.memory.vector_store import VectorStore, Match
+from agent.learning.suggester import Suggester
 from pii_detector import PIIDetector
 
 
@@ -27,6 +28,11 @@ class ScanRequest(BaseModel):
     text: str
 
 
+class SuggestRequest(BaseModel):
+    text: str
+    labels: list[str] = []
+
+
 class ScanResponse(BaseModel):
     regex_matches: list[dict]
     semantic_matches: list[dict]
@@ -36,6 +42,7 @@ class ScanResponse(BaseModel):
 app = FastAPI(title="Guardian Agent — Learning Server")
 store = VectorStore()
 detector = PIIDetector()
+suggester = Suggester()
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/static", StaticFiles(directory=str(UI_DIR)), name="static")
@@ -74,6 +81,30 @@ def scan(req: ScanRequest) -> ScanResponse:
         ],
         redacted=redacted,
     )
+
+
+@app.post("/suggest")
+def suggest(req: SuggestRequest):
+    regex_hits = detector.detect(req.text)
+    skip = {h.value for h in regex_hits}
+
+    suggestions = suggester.suggest(
+        req.text,
+        labels=req.labels or None,
+        skip_spans=skip,
+    )
+    return {
+        "suggestions": [
+            {
+                "label": s.label,
+                "text": s.text,
+                "score": round(s.score, 3),
+                "start": s.start,
+                "end": s.end,
+            }
+            for s in suggestions
+        ]
+    }
 
 
 @app.get("/stats")

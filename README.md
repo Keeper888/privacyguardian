@@ -7,8 +7,9 @@
 > Today we extended it into **Guardian Agent** — a memory-driven privacy layer that **learns what's sensitive to *you*** and shields it across every agent runtime.
 >
 > The new layer lives in [`agent/`](./agent/README.md) and adds:
+> - **TinyML suggester** — local zero-shot NER (GLiNER) that proactively flags sensitive-looking spans the regex would miss. Runs on-device, no external call.
 > - **MongoDB Atlas Vector Search** as semantic memory of what's been marked sensitive
-> - **Learning loop** — one user correction creates a rule that catches every variant of the same idea
+> - **Learning loop** — one click on a suggestion creates a rule that catches every variant
 > - **Cross-runtime intent** — same memory shields any agent (Claude Code, OpenClaw, browser agents) talking on your behalf
 >
 > All hackathon work is on the `hackathon-mongodb-london` branch. Run the recordable demo: `python -m agent.demo.run_demo`.
