@@ -52,25 +52,22 @@ class Suggester:
             text, used_labels, threshold=self.threshold
         )
 
-        seen: Set[str] = set()
-        results: List[Suggestion] = []
+        best: dict = {}
         for e in ents:
             span = e["text"].strip()
             if not span or span.lower() in skip:
                 continue
-            key = (span.lower(), e["label"])
-            if key in seen:
-                continue
-            seen.add(key)
-            results.append(
-                Suggestion(
+            key = span.lower()
+            score = float(e["score"])
+            if key not in best or score > best[key].score:
+                best[key] = Suggestion(
                     label=e["label"],
                     text=span,
-                    score=float(e["score"]),
+                    score=score,
                     start=int(e["start"]),
                     end=int(e["end"]),
                 )
-            )
 
+        results = list(best.values())
         results.sort(key=lambda s: s.score, reverse=True)
         return results

@@ -86,8 +86,14 @@ def scan(req: ScanRequest) -> ScanResponse:
 @app.post("/suggest")
 def suggest(req: SuggestRequest):
     regex_hits = detector.detect(req.text)
+    semantic_hits = store.search(req.text)
+
     skip = {h.value for h in regex_hits}
     skip |= store.list_examples()
+    for hit in semantic_hits:
+        for word in hit.example.split():
+            if len(word) >= 3:
+                skip.add(word)
 
     suggestions = suggester.suggest(
         req.text,
