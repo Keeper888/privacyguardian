@@ -176,7 +176,8 @@ def main():
     import uvicorn
 
     port = int(os.environ.get("LEARNING_SERVER_PORT", "4180"))
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    host = os.environ.get("LEARNING_SERVER_HOST", "127.0.0.1")
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
