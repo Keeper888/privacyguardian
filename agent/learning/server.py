@@ -87,6 +87,7 @@ def scan(req: ScanRequest) -> ScanResponse:
 def suggest(req: SuggestRequest):
     regex_hits = detector.detect(req.text)
     skip = {h.value for h in regex_hits}
+    skip |= store.list_examples()
 
     suggestions = suggester.suggest(
         req.text,

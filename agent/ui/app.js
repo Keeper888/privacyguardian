@@ -1,42 +1,47 @@
 const PRESETS = {
-  basic: "Hi, I'm alex@example.com. My AWS key is AKIAIOSFODNN7EXAMPLE and my IBAN is GB29NWBK60161331926819.",
-  leak: "Quick update on Project Halcyon — we hit the milestone for the London demo, ready to ship next week.",
+  apikey: "Hey can you help me debug this Stripe call: my key is sk_test_FAKEKEYFORLOCALDEMO000000 and the customer ID is cus_NhD8rfP7XKQy9Z",
+  codename: "Quick update on Project Halcyon — we hit the milestone for the London demo, ready to ship next week.",
   variant: "Heads up: the Halcyon launch is locked for next week, and the Halcyon team will be on site.",
 };
 
 const $ = (id) => document.getElementById(id);
+const chat = $("chat");
+
+let lastMessages = [];
 
 async function refreshStats() {
   try {
     const r = await fetch("/stats");
     const j = await r.json();
     $("rule-count").textContent = j.learned_rules ?? "0";
-  } catch (e) {
+  } catch {
     $("rule-count").textContent = "!";
   }
 }
 
 function escapeHtml(s) {
-  return s
+  return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
 
+function scrollDown() {
+  chat.scrollTop = chat.scrollHeight;
+}
+
 function renderRedacted(text, regexHits, semanticHits) {
   const ranges = [];
   for (const h of regexHits) {
-    const idx = text.indexOf(h.value);
-    if (idx >= 0) ranges.push({ start: idx, end: idx + h.value.length, kind: "regex", label: h.type });
+    let i = 0;
+    while (true) {
+      const idx = text.indexOf(h.value, i);
+      if (idx < 0) break;
+      ranges.push({ start: idx, end: idx + h.value.length, kind: "regex", label: h.type });
+      i = idx + 1;
+    }
   }
   for (const h of semanticHits) {
-    let idx = 0;
-    while (true) {
-      const found = text.indexOf(h.example, idx);
-      if (found < 0) break;
-      ranges.push({ start: found, end: found + h.example.length, kind: "semantic", label: h.label });
-      idx = found + 1;
-    }
     const tokens = h.example.split(/\s+/).filter((t) => t.length >= 4);
     for (const tok of tokens) {
       const re = new RegExp("\\b" + tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi");
@@ -46,19 +51,17 @@ function renderRedacted(text, regexHits, semanticHits) {
       }
     }
   }
-
-  ranges.sort((a, b) => a.start - b.start);
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
   const merged = [];
   for (const r of ranges) {
     const last = merged[merged.length - 1];
-    if (last && r.start <= last.end) {
+    if (last && r.start < last.end) {
       last.end = Math.max(last.end, r.end);
       if (r.kind === "regex") last.kind = "regex";
     } else {
       merged.push({ ...r });
     }
   }
-
   let out = "";
   let cursor = 0;
   for (const r of merged) {
@@ -71,77 +74,120 @@ function renderRedacted(text, regexHits, semanticHits) {
   return out;
 }
 
-function renderMatches(regexHits, semanticHits) {
-  const ul = $("matches");
-  ul.innerHTML = "";
-  if (regexHits.length === 0 && semanticHits.length === 0) {
-    ul.innerHTML = '<li class="empty">no matches</li>';
-    return;
-  }
-  for (const h of regexHits) {
-    const li = document.createElement("li");
-    li.className = "regex";
-    li.innerHTML = `<span class="badge">REGEX</span>${escapeHtml(h.type)} → ${escapeHtml(h.value)}`;
-    ul.appendChild(li);
-  }
-  for (const h of semanticHits) {
-    const li = document.createElement("li");
-    li.className = "semantic";
-    li.innerHTML = `<span class="badge">SEMANTIC</span>${escapeHtml(h.label)} → "${escapeHtml(h.example)}" (score ${h.score})`;
-    ul.appendChild(li);
-  }
+function appendUser(text) {
+  const m = document.createElement("div");
+  m.className = "msg user";
+  m.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+  chat.appendChild(m);
+  scrollDown();
 }
 
-function renderSuggestions(text, suggestions) {
-  const ul = $("suggestions");
-  ul.innerHTML = "";
-  if (!suggestions || suggestions.length === 0) {
-    ul.innerHTML = '<li class="empty">no extra suggestions — looks clean to the agent</li>';
-    return;
+function appendThinking() {
+  const m = document.createElement("div");
+  m.className = "msg agent";
+  m.innerHTML = `<div class="agent-card"><span class="thinking">guardian thinking</span></div>`;
+  chat.appendChild(m);
+  scrollDown();
+  return m;
+}
+
+function renderMatchChips(regexHits, semanticHits) {
+  const parts = [];
+  for (const h of regexHits) {
+    parts.push(`<span class="match-chip regex">${escapeHtml(h.type)}: ${escapeHtml(h.value)}</span>`);
   }
-  for (const s of suggestions) {
-    const li = document.createElement("li");
-    li.className = "suggestion";
-    li.innerHTML = `
-      <span class="span">"${escapeHtml(s.text)}"</span>
-      <span class="label">${escapeHtml(s.label)}</span>
-      <span class="score">${s.score}</span>
-      <button data-text="${escapeHtml(s.text)}" data-label="${escapeHtml(s.label.toUpperCase().replace(/\s+/g, "_"))}">Remember</button>
-    `;
-    li.querySelector("button").addEventListener("click", async (ev) => {
-      const btn = ev.target;
-      btn.disabled = true;
-      btn.textContent = "saving…";
+  for (const h of semanticHits) {
+    parts.push(`<span class="match-chip semantic">${escapeHtml(h.label)} ← memory (${h.score})</span>`);
+  }
+  if (!parts.length) return "";
+  return `<div><div class="row-label">caught</div><div class="matches-row">${parts.join("")}</div></div>`;
+}
+
+function renderSuggestionPrompts(originalText, suggestions) {
+  if (!suggestions || suggestions.length === 0) {
+    return `<div><div class="row-label">agent suggests</div><div class="empty-suggest">nothing else stood out — looks clean to the local TinyML</div></div>`;
+  }
+  const blocks = suggestions
+    .map((s, i) => {
+      const labelSlug = s.label.toUpperCase().replace(/\s+/g, "_");
+      return `
+        <div class="prompt" data-idx="${i}">
+          <span>I noticed</span>
+          <span class="quoted">"${escapeHtml(s.text)}"</span>
+          <span class="why">looks like a ${escapeHtml(s.label)} (${s.score}). Should I redact this and remember it for next time?</span>
+          <div class="prompt-actions">
+            <button class="btn-yes" data-action="yes" data-text="${escapeHtml(s.text)}" data-label="${escapeHtml(labelSlug)}" data-source-label="${escapeHtml(s.label)}" data-score="${s.score}">Yes</button>
+            <button class="btn-no" data-action="no">No</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+  return `<div><div class="row-label">agent suggests <span style="color:var(--ink-faint);text-transform:none;letter-spacing:0;font-weight:normal;">· local TinyML, never leaves device</span></div><div class="suggestions">${blocks}</div></div>`;
+}
+
+function renderAgentCard(originalText, scanResp, suggestResp) {
+  const card = document.createElement("div");
+  card.className = "agent-card";
+  const aiSeesHtml = renderRedacted(originalText, scanResp.regex_matches, scanResp.semantic_matches);
+  card.innerHTML = `
+    <div>
+      <div class="row-label">what your AI agent would actually see</div>
+      <div class="ai-sees">${aiSeesHtml}</div>
+    </div>
+    ${renderMatchChips(scanResp.regex_matches, scanResp.semantic_matches)}
+    ${renderSuggestionPrompts(originalText, suggestResp.suggestions)}
+  `;
+  card.querySelectorAll(".prompt-actions button").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      const target = ev.currentTarget;
+      const prompt = target.closest(".prompt");
+      const action = target.dataset.action;
+      if (action === "no") {
+        prompt.classList.add("resolved");
+        prompt.insertAdjacentHTML("beforeend", `<span class="resolution">✗ ignored</span>`);
+        return;
+      }
+      target.disabled = true;
+      target.textContent = "saving…";
       try {
         await fetch("/correct", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            label: btn.dataset.label,
-            example: btn.dataset.text,
-            context: "agent-suggested",
-            reason: `Flagged by local NER as "${s.label}" (score ${s.score})`,
+            label: target.dataset.label,
+            example: target.dataset.text,
+            context: "agent-suggested in chat",
+            reason: `Flagged by local NER as "${target.dataset.sourceLabel}" (score ${target.dataset.score})`,
           }),
         });
-        li.classList.add("accepted");
-        btn.textContent = "remembered ✓";
+        prompt.classList.add("resolved");
+        prompt.insertAdjacentHTML("beforeend", `<span class="resolution">✓ remembered · will catch every variant</span>`);
         refreshStats();
-      } catch (err) {
-        btn.textContent = "error";
+        const aiSees = card.querySelector(".ai-sees");
+        const t = target.dataset.text;
+        const lab = target.dataset.label;
+        if (aiSees && t) {
+          const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+          aiSees.innerHTML = aiSees.innerHTML.replace(
+            re,
+            `<span class="tok-tinyml">&lt;${escapeHtml(lab)}&gt;</span>`
+          );
+        }
+      } catch (e) {
+        target.textContent = "error";
       }
     });
-    ul.appendChild(li);
-  }
+  });
+  return card;
 }
 
-async function onScan() {
-  const text = $("scan-input").value.trim();
-  if (!text) return;
-  const btn = $("scan-btn");
-  btn.disabled = true;
-  btn.textContent = "Scanning…";
-  $("suggestions").innerHTML = '<li class="empty">agent thinking…</li>';
-  $("scan-output").classList.remove("hidden");
+async function send(text) {
+  if (!text.trim()) return;
+  appendUser(text);
+  $("input").value = "";
+  $("send").disabled = true;
+  const thinking = appendThinking();
+
   try {
     const [scanResp, suggestResp] = await Promise.all([
       fetch("/scan", {
@@ -155,67 +201,38 @@ async function onScan() {
         body: JSON.stringify({ text }),
       }).then((r) => r.json()),
     ]);
-    $("redacted").innerHTML = renderRedacted(text, scanResp.regex_matches, scanResp.semantic_matches);
-    renderMatches(scanResp.regex_matches, scanResp.semantic_matches);
-    renderSuggestions(text, suggestResp.suggestions);
-  } catch (e) {
-    $("redacted").textContent = "error: " + e.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Scan";
-  }
-}
 
-async function onTeach() {
-  const label = $("teach-label").value.trim();
-  const example = $("teach-example").value.trim();
-  if (!label || !example) {
-    showTeach("label and example required", true);
-    return;
-  }
-  const btn = $("teach-btn");
-  btn.disabled = true;
-  btn.textContent = "Saving…";
-  try {
-    const r = await fetch("/correct", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label,
-        example,
-        context: $("teach-context").value.trim(),
-        reason: $("teach-reason").value.trim(),
-      }),
-    });
-    const j = await r.json();
-    showTeach(`✓ remembered (id: ${j.id.slice(0, 8)}…) · ${j.total_rules} rules in Atlas`);
-    refreshStats();
+    const card = renderAgentCard(text, scanResp, suggestResp);
+    thinking.replaceChildren(card);
+    scrollDown();
   } catch (e) {
-    showTeach("error: " + e.message, true);
+    thinking.innerHTML = `<div class="agent-card"><span style="color:var(--danger);font-family:var(--mono);font-size:12px;">error: ${escapeHtml(e.message)}</span></div>`;
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Remember";
+    $("send").disabled = false;
+    $("input").focus();
   }
-}
-
-function showTeach(msg, isError = false) {
-  const el = $("teach-output");
-  el.innerHTML = `<span class="toast${isError ? " error" : ""}">${escapeHtml(msg)}</span>`;
-  el.classList.remove("hidden");
 }
 
 document.querySelectorAll(".preset").forEach((b) => {
   b.addEventListener("click", () => {
-    $("scan-input").value = PRESETS[b.dataset.preset] || "";
-    $("scan-input").focus();
+    $("input").value = PRESETS[b.dataset.preset] || "";
+    $("input").focus();
   });
 });
 
-$("scan-btn").addEventListener("click", onScan);
-$("teach-btn").addEventListener("click", onTeach);
+$("composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  send($("input").value);
+});
 
-$("scan-input").addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onScan();
+$("input").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    e.preventDefault();
+    send($("input").value);
+  } else if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send($("input").value);
+  }
 });
 
 refreshStats();

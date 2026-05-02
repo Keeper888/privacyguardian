@@ -87,5 +87,12 @@ class VectorStore:
     def count(self) -> int:
         return self.collection.count_documents({})
 
+    def list_examples(self) -> set:
+        return {
+            doc["example"].lower()
+            for doc in self.collection.find({}, {"example": 1, "_id": 0})
+            if doc.get("example")
+        }
+
     def clear(self):
         self.collection.delete_many({})

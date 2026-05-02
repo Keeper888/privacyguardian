@@ -10,7 +10,7 @@
   <header>
     <div class="brand">
       <h1>Guardian Agent</h1>
-      <p class="tag">memory-driven privacy · <span class="atlas">MongoDB Atlas Vector Search</span></p>
+      <p class="tag">memory-driven privacy · <span class="atlas">MongoDB Atlas Vector Search</span> · <span class="tinyml">local TinyML (GLiNER)</span></p>
     </div>
     <div class="stats">
       <span class="stat-label">learned rules</span>
@@ -19,64 +19,32 @@
   </header>
 
   <main>
-    <section class="card scan-card">
-      <header class="card-head">
-        <h2>1 · Scan</h2>
-        <p>Run text through the shield. Yellow = regex. Green = semantic memory.</p>
-      </header>
-
-      <div class="presets">
-        <button class="preset" data-preset="basic">Basic PII</button>
-        <button class="preset" data-preset="leak">Codename leak</button>
-        <button class="preset" data-preset="variant">Variant phrasing</button>
-      </div>
-
-      <textarea id="scan-input" rows="4" placeholder="Paste any message your AI agent is about to send…"></textarea>
-      <button id="scan-btn" class="primary">Scan</button>
-
-      <div id="scan-output" class="output hidden">
-        <div class="output-block">
-          <span class="output-label">AI sees</span>
-          <div id="redacted" class="redacted"></div>
-        </div>
-        <div class="output-block">
-          <span class="output-label">matches</span>
-          <ul id="matches" class="matches"></ul>
-        </div>
-        <div class="output-block">
-          <span class="output-label">agent suggests <span class="sub">(local TinyML, GLiNER)</span></span>
-          <ul id="suggestions" class="suggestions"></ul>
+    <div id="chat" class="chat">
+      <div class="msg agent system">
+        <div class="bubble">
+          <p>Hi. Type anything you'd send to an AI agent.</p>
+          <p>I'll check it locally before it leaves your machine — regex catches the obvious PII, and a TinyML model (GLiNER, runs on-device) flags anything else that looks sensitive. You decide what to remember.</p>
         </div>
       </div>
-    </section>
+    </div>
 
-    <section class="card teach-card">
-      <header class="card-head">
-        <h2>2 · Teach</h2>
-        <p>Mark something as sensitive. Stored in Atlas with semantic embedding — every variant gets caught next time.</p>
-      </header>
+    <div class="presets-row">
+      <span class="presets-label">try:</span>
+      <button class="preset" data-preset="apikey">Drop an API key</button>
+      <button class="preset" data-preset="codename">Mention a codename</button>
+      <button class="preset" data-preset="variant">Same codename, rephrased</button>
+    </div>
 
-      <label>Label
-        <input id="teach-label" placeholder="INTERNAL_CODENAME" autocomplete="off">
-      </label>
-      <label>Example phrase
-        <input id="teach-example" placeholder="Project Halcyon" autocomplete="off">
-      </label>
-      <label>Context (optional)
-        <input id="teach-context" placeholder="confidential codenames used internally" autocomplete="off">
-      </label>
-      <label>Reason (optional)
-        <input id="teach-reason" placeholder="R&amp;D codename, not yet announced" autocomplete="off">
-      </label>
-      <button id="teach-btn" class="primary">Remember</button>
-
-      <div id="teach-output" class="output hidden"></div>
-    </section>
+    <form id="composer" class="composer" autocomplete="off">
+      <textarea id="input" rows="2" placeholder="Type a message your agent is about to send…"></textarea>
+      <button id="send" type="submit" class="primary">Send</button>
+    </form>
   </main>
 
   <footer>
-    <span class="dot regex"></span> regex (built-in)
-    <span class="dot semantic"></span> semantic (Atlas Vector Search)
+    <span class="dot regex"></span> regex
+    <span class="dot semantic"></span> semantic memory
+    <span class="dot tinyml"></span> TinyML suggestion
     <span class="repo"><a href="https://github.com/Keeper888/privacyguardian/tree/hackathon-mongodb-london" target="_blank" rel="noopener">github →</a></span>
   </footer>
 

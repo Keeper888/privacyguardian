@@ -15,6 +15,9 @@ DEFAULT_LABELS = [
     "client name",
     "product name",
     "person name",
+    "api key",
+    "credential",
+    "password",
     "secret",
 ]
 
