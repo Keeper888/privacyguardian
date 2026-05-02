@@ -305,6 +305,47 @@ main {
   font-style: italic;
 }
 
+.ai-reply .ai-bubble {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-real {
+  color: var(--ink);
+  font-family: -apple-system, "Inter", system-ui, sans-serif;
+  white-space: pre-wrap;
+}
+
+.ai-redacted-toggle summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  user-select: none;
+}
+
+.ai-redacted-toggle summary:hover { color: var(--ink-dim); }
+
+.ai-redacted {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .thinking {
   font-size: 12px;
   color: var(--ink-faint);

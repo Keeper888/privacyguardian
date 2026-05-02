@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "code"))
 
 from agent.memory.vector_store import VectorStore, Match
 from agent.learning.suggester import Suggester
+from agent.llm.tokenizer import tokenize, detokenize
+from agent.llm import minimax
 from pii_detector import PIIDetector
 
 
@@ -31,6 +33,10 @@ class ScanRequest(BaseModel):
 class SuggestRequest(BaseModel):
     text: str
     labels: list[str] = []
+
+
+class ChatRequest(BaseModel):
+    text: str
 
 
 class ScanResponse(BaseModel):
@@ -111,6 +117,53 @@ def suggest(req: SuggestRequest):
             }
             for s in suggestions
         ]
+    }
+
+
+SYSTEM_PROMPT = (
+    "You are a helpful assistant. The user's message contains placeholder "
+    "tokens like <EMAIL>, <STRIPE_KEY>, <COMPANY_NAME>, <INTERNAL_CODENAME>. "
+    "These are redactions — the real values are private and never sent to "
+    "you. Treat each token as an opaque reference and reuse the EXACT same "
+    "token (verbatim, including angle brackets) when referring to it in "
+    "your reply. Do not translate them, do not guess what they are, do not "
+    "remove the angle brackets. Be concise — under 4 short sentences."
+)
+
+
+@app.post("/chat")
+def chat(req: ChatRequest):
+    regex_hits = detector.detect(req.text)
+    semantic_hits = store.search(req.text)
+    redacted, token_map = tokenize(req.text, regex_hits, semantic_hits)
+
+    error = None
+    ai_reply_redacted = ""
+    try:
+        ai_reply_redacted = minimax.chat(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": redacted},
+            ]
+        )
+    except Exception as e:
+        error = str(e)
+
+    ai_reply_real = detokenize(ai_reply_redacted, token_map) if ai_reply_redacted else ""
+
+    return {
+        "redacted_user": redacted,
+        "ai_reply_redacted": ai_reply_redacted,
+        "ai_reply_real": ai_reply_real,
+        "tokens": list(token_map.keys()),
+        "error": error,
+        "regex_matches": [
+            {"type": h.pii_type.value, "value": h.value} for h in regex_hits
+        ],
+        "semantic_matches": [
+            {"label": h.label, "example": h.example, "score": round(h.score, 3)}
+            for h in semantic_hits
+        ],
     }
 
 

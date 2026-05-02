@@ -42,7 +42,15 @@ function renderRedacted(text, regexHits, semanticHits) {
     }
   }
   for (const h of semanticHits) {
-    const tokens = h.example.split(/\s+/).filter((t) => t.length >= 4);
+    const phrase = h.example.trim();
+    if (phrase) {
+      const re = new RegExp("\\b" + phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi");
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        ranges.push({ start: m.index, end: m.index + m[0].length, kind: "semantic", label: h.label });
+      }
+    }
+    const tokens = h.example.split(/\s+/).filter((t) => t.length >= 3);
     for (const tok of tokens) {
       const re = new RegExp("\\b" + tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi");
       let m;
@@ -181,6 +189,39 @@ function renderAgentCard(originalText, scanResp, suggestResp) {
   return card;
 }
 
+function appendAiReply(realText, redactedText, tokens, error) {
+  const m = document.createElement("div");
+  m.className = "msg agent ai-reply";
+  if (error) {
+    m.innerHTML = `<div class="bubble" style="color:var(--danger);font-size:12px;">AI unavailable: ${escapeHtml(error)}</div>`;
+  } else {
+    let highlighted = escapeHtml(realText);
+    for (const t of tokens || []) {
+      const real = redactedText && false; // not used
+    }
+    let body = realText;
+    const escapedReal = escapeHtml(body);
+    let withHighlights = escapedReal;
+    if (redactedText) {
+      const tokenMap = new Map();
+      for (const t of tokens) {
+        const labelInner = t.replace(/^&lt;|&gt;$/g, "").replace(/^</, "").replace(/>$/, "");
+      }
+    }
+    m.innerHTML = `
+      <div class="ai-bubble">
+        <div class="ai-real">${escapeHtml(realText)}</div>
+        <details class="ai-redacted-toggle">
+          <summary>what the AI actually generated (with tokens)</summary>
+          <div class="ai-redacted">${escapeHtml(redactedText || '')}</div>
+        </details>
+      </div>
+    `;
+  }
+  chat.appendChild(m);
+  scrollDown();
+}
+
 async function send(text) {
   if (!text.trim()) return;
   appendUser(text);
@@ -189,8 +230,8 @@ async function send(text) {
   const thinking = appendThinking();
 
   try {
-    const [scanResp, suggestResp] = await Promise.all([
-      fetch("/scan", {
+    const [chatResp, suggestResp] = await Promise.all([
+      fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
@@ -202,8 +243,21 @@ async function send(text) {
       }).then((r) => r.json()),
     ]);
 
+    const scanResp = {
+      regex_matches: chatResp.regex_matches,
+      semantic_matches: chatResp.semantic_matches,
+    };
     const card = renderAgentCard(text, scanResp, suggestResp);
     thinking.replaceChildren(card);
+
+    if (chatResp.ai_reply_real || chatResp.error) {
+      appendAiReply(
+        chatResp.ai_reply_real,
+        chatResp.ai_reply_redacted,
+        chatResp.tokens,
+        chatResp.error
+      );
+    }
     scrollDown();
   } catch (e) {
     thinking.innerHTML = `<div class="agent-card"><span style="color:var(--danger);font-family:var(--mono);font-size:12px;">error: ${escapeHtml(e.message)}</span></div>`;
