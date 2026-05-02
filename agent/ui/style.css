@@ -265,19 +265,48 @@ main {
 
 .btn-no:hover { color: var(--ink); border-color: var(--ink-dim); }
 
-.prompt.resolved {
-  border-color: var(--border);
-}
-
 .prompt.resolved .prompt-actions {
   display: none;
 }
 
+.prompt.resolved.yes {
+  border-color: var(--accent);
+  background: linear-gradient(0deg, var(--accent-soft), transparent 60%), var(--bg);
+}
+
+.prompt.resolved.no {
+  border-color: rgba(239, 107, 107, 0.35);
+  background: linear-gradient(0deg, rgba(239, 107, 107, 0.08), transparent 60%), var(--bg);
+}
+
+.prompt.resolved.no .quoted {
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+  text-decoration-thickness: 2px;
+  opacity: 0.65;
+}
+
+.prompt.resolved.no .why {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
 .prompt .resolution {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--ink-faint);
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
   font-family: var(--mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt .resolution.yes { color: var(--accent); }
+.prompt .resolution.no  { color: var(--danger); }
+
+.prompt .resolution .icon {
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .matches-row {

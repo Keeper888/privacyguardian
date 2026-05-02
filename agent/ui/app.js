@@ -151,8 +151,11 @@ function renderAgentCard(originalText, scanResp, suggestResp) {
       const prompt = target.closest(".prompt");
       const action = target.dataset.action;
       if (action === "no") {
-        prompt.classList.add("resolved");
-        prompt.insertAdjacentHTML("beforeend", `<span class="resolution">✗ ignored</span>`);
+        prompt.classList.add("resolved", "no");
+        prompt.insertAdjacentHTML(
+          "beforeend",
+          `<div class="resolution no"><span class="icon">✗</span> Got it — not sensitive. The AI will keep seeing this in plain text.</div>`
+        );
         return;
       }
       target.disabled = true;
@@ -168,8 +171,11 @@ function renderAgentCard(originalText, scanResp, suggestResp) {
             reason: `Flagged by local NER as "${target.dataset.sourceLabel}" (score ${target.dataset.score})`,
           }),
         });
-        prompt.classList.add("resolved");
-        prompt.insertAdjacentHTML("beforeend", `<span class="resolution">✓ remembered · will catch every variant</span>`);
+        prompt.classList.add("resolved", "yes");
+        prompt.insertAdjacentHTML(
+          "beforeend",
+          `<div class="resolution yes"><span class="icon">✓</span> Remembered — every variant gets caught from now on.</div>`
+        );
         refreshStats();
         const aiSees = card.querySelector(".ai-sees");
         const t = target.dataset.text;
