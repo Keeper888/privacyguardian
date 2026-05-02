@@ -4,6 +4,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -34,6 +36,14 @@ class ScanResponse(BaseModel):
 app = FastAPI(title="Guardian Agent — Learning Server")
 store = VectorStore()
 detector = PIIDetector()
+
+UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+app.mount("/static", StaticFiles(directory=str(UI_DIR)), name="static")
+
+
+@app.get("/")
+def index():
+    return FileResponse(UI_DIR / "index.html")
 
 
 @app.post("/correct")

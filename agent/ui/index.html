@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardian Agent · Memory-Driven Privacy</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Guardian Agent</h1>
+      <p class="tag">memory-driven privacy · <span class="atlas">MongoDB Atlas Vector Search</span></p>
+    </div>
+    <div class="stats">
+      <span class="stat-label">learned rules</span>
+      <span id="rule-count" class="stat-value">–</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card scan-card">
+      <header class="card-head">
+        <h2>1 · Scan</h2>
+        <p>Run text through the shield. Yellow = regex. Green = semantic memory.</p>
+      </header>
+
+      <div class="presets">
+        <button class="preset" data-preset="basic">Basic PII</button>
+        <button class="preset" data-preset="leak">Codename leak</button>
+        <button class="preset" data-preset="variant">Variant phrasing</button>
+      </div>
+
+      <textarea id="scan-input" rows="4" placeholder="Paste any message your AI agent is about to send…"></textarea>
+      <button id="scan-btn" class="primary">Scan</button>
+
+      <div id="scan-output" class="output hidden">
+        <div class="output-block">
+          <span class="output-label">AI sees</span>
+          <div id="redacted" class="redacted"></div>
+        </div>
+        <div class="output-block">
+          <span class="output-label">matches</span>
+          <ul id="matches" class="matches"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="card teach-card">
+      <header class="card-head">
+        <h2>2 · Teach</h2>
+        <p>Mark something as sensitive. Stored in Atlas with semantic embedding — every variant gets caught next time.</p>
+      </header>
+
+      <label>Label
+        <input id="teach-label" placeholder="INTERNAL_CODENAME" autocomplete="off">
+      </label>
+      <label>Example phrase
+        <input id="teach-example" placeholder="Project Halcyon" autocomplete="off">
+      </label>
+      <label>Context (optional)
+        <input id="teach-context" placeholder="confidential codenames used internally" autocomplete="off">
+      </label>
+      <label>Reason (optional)
+        <input id="teach-reason" placeholder="R&amp;D codename, not yet announced" autocomplete="off">
+      </label>
+      <button id="teach-btn" class="primary">Remember</button>
+
+      <div id="teach-output" class="output hidden"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span class="dot regex"></span> regex (built-in)
+    <span class="dot semantic"></span> semantic (Atlas Vector Search)
+    <span class="repo"><a href="https://github.com/Keeper888/privacyguardian/tree/hackathon-mongodb-london" target="_blank" rel="noopener">github →</a></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
