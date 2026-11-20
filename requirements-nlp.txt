@@ -1,0 +1,4 @@
+# Optional NLP layer (names, places). Enable with PG_NLP=1.
+# After install: python -m spacy download en_core_web_lg
+presidio-analyzer>=2.2.0
+spacy>=3.7.0

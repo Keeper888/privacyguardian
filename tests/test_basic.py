@@ -93,7 +93,7 @@ def test_token_format():
 
     # Token should have correct format
     import re
-    token_pattern = r'◈PG:[A-Z_]+_[a-f0-9]+◈'
+    token_pattern = r'◈PG:[A-Z0-9_]+_[a-f0-9]{16}◈'
     tokens_found = re.findall(token_pattern, protected)
 
     assert len(tokens_found) == 1, f"Should create exactly 1 token, got: {protected}"

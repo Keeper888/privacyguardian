@@ -1,15 +1,5 @@
-# PrivacyGuardian Dependencies
-# Minimal footprint for maximum performance
-
-# Core proxy
+# PrivacyGuardian courier: pure Python, no build step
 fastapi>=0.104.0
 uvicorn>=0.24.0
 httpx>=0.25.0
-
-# TLS certificate generation (transparent proxy)
-cryptography>=41.0.0
-
-# Note: PII encryption uses libsodium (C library, not pip)
-
-# Optional: Tiny LLM for validation (uncomment if needed)
-# llama-cpp-python>=0.2.0
+cryptography>=41.0.0   # ChaCha20-Poly1305 vault encryption

@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+pg - PrivacyGuardian courier
+
+  pg start [--fg]        start the proxy (background unless --fg)
+  pg stop                stop it
+  pg status              is it up, how much has it protected
+  pg run <app> [args]    run an AI client through the proxy, this process only
+                         (e.g. pg run claude -p "hello")
+  pg vault [n]           last n protected values, masked
+
+Env: PG_PORT (4666), PG_HOME (~/.privacyguardian), PG_UPSTREAM, PG_NLP=1
+"""
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+CODE = ROOT / "code"
+PORT = int(os.environ.get("PG_PORT", "4666"))
+URL = f"http://127.0.0.1:{PORT}"
+HOME = Path(os.environ.get("PG_HOME", "~/.privacyguardian")).expanduser()
+PID_FILE = HOME / "proxy.pid"
+LOG_FILE = HOME / "proxy.log"
+
+# Which env var points each client at a custom API base
+BASE_URL_VARS = {
+    "claude": ("ANTHROPIC_BASE_URL", ""),
+    "openai": ("OPENAI_BASE_URL", "/v1"),
+    "codex": ("OPENAI_BASE_URL", "/v1"),
+}
+
+
+def get(path: str):
+    try:
+        with urllib.request.urlopen(URL + path, timeout=2) as r:
+            return json.loads(r.read())
+    except Exception:
+        return None
+
+
+def is_up() -> bool:
+    return get("/__guardian__/health") is not None
+
+
+def start(fg: bool) -> int:
+    if is_up():
+        print(f"already running on {URL}")
+        return 0
+    HOME.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, str(CODE / "guardian_proxy.py")]
+    if fg:
+        return subprocess.call(cmd, cwd=CODE)
+    log = open(LOG_FILE, "ab")
+    kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}
+    p = subprocess.Popen(cmd, cwd=CODE, stdout=log, stderr=log, stdin=subprocess.DEVNULL, **kw)
+    PID_FILE.write_text(str(p.pid))
+    for _ in range(40):
+        if is_up():
+            print(f"started on {URL} (pid {p.pid}, log {LOG_FILE})")
+            return 0
+        if p.poll() is not None:
+            break
+        time.sleep(0.25)
+    print(f"proxy did not come up, see {LOG_FILE}")
+    return 1
+
+
+def stop() -> int:
+    if not PID_FILE.exists():
+        print("no pid file; not started by pg" if not is_up() else f"running on {URL} but not started by pg")
+        return 1
+    pid = int(PID_FILE.read_text())
+    try:
+        if os.name == "nt":
+            subprocess.call(["taskkill", "/PID", str(pid), "/F"], stdout=subprocess.DEVNULL)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    PID_FILE.unlink(missing_ok=True)
+    print(f"stopped pid {pid}")
+    return 0
+
+
+def status() -> int:
+    s = get("/__guardian__/stats")
+    if not s:
+        print(f"down ({URL})")
+        return 1
+    print(f"up on {URL}, uptime {s['uptime']}, {s['requests_processed']} requests, "
+          f"{s['vault']['total_tokens']} values in the vault")
+    return 0
+
+
+def run(app: str, args) -> int:
+    if not is_up():
+        print(f"proxy is down: start it with `pg start` (not running {app} unprotected)")
+        return 1
+    var, suffix = BASE_URL_VARS.get(app, ("ANTHROPIC_BASE_URL", ""))
+    env = {**os.environ, var: URL + suffix}
+    return subprocess.call([app, *args], env=env, shell=(os.name == "nt"))
+
+
+def vault(n: int) -> int:
+    sys.path.insert(0, str(CODE))
+    from vault import TokenVault
+    v = TokenVault()
+    for row in v.recent_activity(n):
+        print(f"{row['timestamp'][:19]}  {row['pii_type']:<14} {row['masked_value']}")
+    print(v.stats())
+    return 0
+
+
+def main() -> int:
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    cmd = a[0]
+    if cmd == "start":
+        return start("--fg" in a)
+    if cmd == "stop":
+        return stop()
+    if cmd == "status":
+        return status()
+    if cmd == "run" and len(a) >= 2:
+        return run(a[1], a[2:])
+    if cmd == "vault":
+        return vault(int(a[1]) if len(a) > 1 else 20)
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

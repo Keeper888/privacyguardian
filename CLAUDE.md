@@ -19,9 +19,10 @@ If any personal data is found, replace with generic placeholders before committi
 
 ## Project Structure
 
-- `guardian` - Main CLI entry point
-- `pg-wrapper` - Wrapper script for LLM apps
-- `code/` - Python source code
-- `code/gui/` - GTK4 dashboard
-- `packaging/` - .deb package build scripts
-- `images/` - Screenshots for README
+- `pg` - CLI (start, stop, status, run, vault)
+- `code/guardian_proxy.py` - the proxy (FastAPI + httpx)
+- `code/courier.py` - swaps values for tokens and back, stream handling
+- `code/vault.py` - keyed tokens + encrypted local storage
+- `code/pii_detector.py` - regex patterns, optional Presidio layer
+- `code/llm_endpoints.py` - provider registry
+- `tests/` - `python -m pytest tests -q` (no network, temp vault)

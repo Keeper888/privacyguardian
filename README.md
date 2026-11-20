@@ -9,11 +9,6 @@ Your emails, passwords, medical records - encrypted before they leave your compu
 > When AI coding tools scan your files, they read everything — API keys in configs, credentials in `.env` files, customer data in test fixtures. We're working to intercept all of it before it leaves your machine. [Track progress](https://github.com/Keeper888/privacyguardian/issues/9)
 
 <p align="center">
-  <img src="images/gui-dashboard.png" alt="PrivacyGuardian Dashboard" width="700"/>
-</p>
-<p align="center"><code>./guardian gui</code></p>
-
-<p align="center">
   <img src="images/cli-demo.png" alt="CLI Protection Demo" width="700"/>
 </p>
 
@@ -34,39 +29,27 @@ Currently tested on Claude Code and Antigravity. Something broken? Open an issue
 
 ## Quick Start (2 minutes)
 
-```bash
-# 1. Download
-git clone https://github.com/Keeper888/privacyguardian.git
-cd privacyguardian
-
-# 2. Install dependencies + build
-sudo apt install libsodium-dev  # encryption library
-make                            # build C crypto library
-
-# 3. Setup
-./guardian setup
-
-# 4. Open GUI
-./guardian gui
-```
-
-### Want an easier install? Use the Python version
+Works on Linux, macOS and Windows. Pure Python, no build step.
 
 ```bash
 git clone https://github.com/Keeper888/privacyguardian.git
 cd privacyguardian
-git checkout python-stable   # no C build needed
-./guardian setup
-./guardian gui
+pip install -r requirements.txt
+
+python pg start            # proxy on http://127.0.0.1:4666
+python pg run claude       # Claude Code through the courier, this terminal only
 ```
 
-The `python-stable` branch uses pure Python encryption (Fernet/AES).
+`pg run` sets `ANTHROPIC_BASE_URL` for that one process. Nothing global changes, so a stopped proxy never breaks your normal `claude`.
 
-**In the GUI:**
-1. Click **Setup** → Select apps → **Apply**
-2. Press **Enter** in the terminal that opens
-3. Toggle **Protection ON**
-4. Done! Use `claude` normally in any new terminal
+| Command | Does |
+|---|---|
+| `pg start [--fg]` | start the proxy |
+| `pg stop` / `pg status` | stop it / is it up |
+| `pg run <app> [args]` | run an AI client through it |
+| `pg vault [n]` | last n protected values, masked |
+
+Settings: `PG_PORT` (4666), `PG_HOME` (`~/.privacyguardian`), `PG_UPSTREAM`, `PG_NLP=1` for name/place detection (`pip install -r requirements-nlp.txt`).
 
 ---
 
@@ -95,46 +78,16 @@ AI can still help you. It just never sees your real data.
 
 ---
 
-## GUI Apps (Cursor, Antigravity, etc.)
+## Why the AI can still do the work (the courier)
 
-For GUI apps, Setup creates launchers in `~/.local/bin/`:
+The AI reads your files, sees tokens, and copies tokens into its edits and commands. On the way back the proxy swaps each token for the real value, so the file written on your disk has the real data. The AI moved it without ever seeing it.
 
-```bash
-# After setup, run protected versions:
-cursor-protected      # Cursor with protection
-antigravity-protected # Antigravity with protection
-windsurf-protected    # Windsurf with protection
-zed-protected         # Zed with protection
-```
+- **Tokens are keyed.** `HMAC-SHA256(local secret, value)`: the secret never leaves your machine, so a token can't be reversed by guessing values, and two installs give different tokens.
+- **Everything is scanned on the way out**, not just chat messages: tool calls, commands, file edits, the system prompt. Only structural fields (model, ids, roles) and signed thinking blocks are left alone.
+- **Streams are safe.** A token cut in half between two stream events is held until it is whole.
+- **The vault** (`~/.privacyguardian/courier.db`) stores values encrypted with ChaCha20-Poly1305.
 
-Or add `~/.local/bin` to your PATH, then use these from anywhere.
-
----
-
-## Commands
-
-```bash
-./guardian gui       # Open dashboard
-./guardian enable    # Turn on protection
-./guardian disable   # Turn off protection
-./guardian status    # Check if running
-```
-
----
-
-## Requirements
-
-**System:**
-- Linux (Ubuntu, Debian, Fedora, Arch)
-
-**Build (C crypto):**
-- gcc
-- make
-- libsodium-dev (`sudo apt install libsodium-dev`)
-
-**Runtime (proxy server):**
-- Python 3.8+
-- pip packages (installed via `./guardian setup`)
+GUI apps (Cursor, Antigravity) are not covered yet: see #10, #11.
 
 ---
 

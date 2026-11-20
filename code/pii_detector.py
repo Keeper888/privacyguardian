@@ -1,9 +1,11 @@
 """
 PrivacyGuardian - PII Detector
-Fast regex-based PII detection with optional tiny LLM validation
+Fast regex-based PII detection with Presidio NLP layer for semantic PII.
 """
 
 import re
+import os
+import hashlib
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from enum import Enum
@@ -47,6 +49,8 @@ class PIIType(Enum):
     API_KEY = "API_KEY"
     AWS_KEY = "AWS_KEY"
     PRIVATE_KEY = "PRIVATE_KEY"
+    SSH_KEY = "SSH_KEY"
+    FILE_PATH = "FILE_PATH"
     PASSWORD = "PASSWORD"
     IP_ADDRESS = "IP_ADDRESS"
     MAC_ADDRESS = "MAC_ADDRESS"
@@ -58,6 +62,10 @@ class PIIType(Enum):
     OPENAI_KEY = "OPENAI_KEY"
     GOOGLE_KEY = "GOOGLE_KEY"
     STRIPE_KEY = "STRIPE_KEY"
+
+    # === SEMANTIC (detected by Presidio NLP) ===
+    PERSON_NAME = "PERSON"
+    LOCATION = "LOCATION"
 
 
 @dataclass
@@ -241,8 +249,12 @@ PII_PATTERNS = {
     ),
 
     # OpenAI API Keys
+    # New format: sk-proj-... / sk-svcacct-...
+    # Old format: sk- followed by 32+ consecutive alphanumeric chars (no dashes)
+    #   — dashes in Anthropic keys (sk-ant-...) naturally break this match
     PIIType.OPENAI_KEY: re.compile(
-        r'\bsk-[A-Za-z0-9]{32,}(?:-[A-Za-z0-9]+)?\b'
+        r'\bsk-(?:proj|svcacct)-[A-Za-z0-9_-]{40,}\b'
+        r'|\bsk-[A-Za-z0-9]{32,}\b'
     ),
 
     # Google API Keys
@@ -266,17 +278,47 @@ PII_PATTERNS = {
         re.MULTILINE
     ),
 
+    # SSH Public Keys
+    PIIType.SSH_KEY: re.compile(
+        r'\b(?:ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+[A-Za-z0-9+/]{20,}={0,2}(?:\s+\S+)?\b'
+    ),
+
+    # Sensitive file paths (SSH keys, credentials, secrets, env files)
+    PIIType.FILE_PATH: re.compile(
+        r'(?:'
+        r'~|/home/[^/\s]+|/root|/Users/[^/\s]+'
+        r'|[A-Za-z]:\\Users\\[^\\]+|%USERPROFILE%|%APPDATA%'
+        r')'
+        r'(?:[/\\][^\s,\'"<>]{1,80})*'
+        r'[/\\](?:'
+        r'\.ssh|\.aws|\.gnupg|\.pgp'
+        r'|secrets?(?:\.md|\.txt|\.json|\.yaml|\.env)?'
+        r'|credentials?(?:\.md|\.txt|\.json)?'
+        r'|\.env(?:\.[a-z]+)?'
+        r'|id_rsa|id_ed25519|id_ecdsa|id_dsa'
+        r'|private[_-]?key'
+        r'|[^\s/\\]*\.pem|[^\s/\\]*\.p12|[^\s/\\]*\.pfx'
+        r')[^\s,\'"<>]*',
+        re.IGNORECASE
+    ),
+
     # Password patterns (in config/env files)
     PIIType.PASSWORD: re.compile(
         r'(?:password|passwd|pwd|secret|token)[\s]*[=:]\s*["\']?([^\s"\']{8,})["\']?',
         re.IGNORECASE
     ),
 
-    # IPv4 Addresses (private ranges)
+    # IPv4 Addresses — all valid addresses except loopback/unspecified/broadcast
+    # Validates each octet is 0-255, excludes 127.x.x.x, 0.0.0.0, 255.255.255.255
     PIIType.IP_ADDRESS: re.compile(
-        r'\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|'
-        r'172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|'
-        r'192\.168\.\d{1,3}\.\d{1,3})\b'
+        r'\b(?!'
+        r'127\.\d+\.\d+\.\d+|'    # loopback
+        r'0\.0\.0\.0|'             # unspecified
+        r'255\.255\.255\.255'      # broadcast
+        r')'
+        r'(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}'
+        r'(?:25[0-5]|2[0-4]\d|[01]?\d\d?)'
+        r'\b'
     ),
 
     # MAC Addresses
@@ -313,21 +355,95 @@ PII_PATTERNS = {
 }
 
 
-class PIIDetector:
-    """Fast PII detection using compiled regex patterns"""
+class PresidioNLPDetector:
+    """
+    NLP-based PII detection using Microsoft Presidio + spaCy.
+    Catches semantic PII that regex can't: names, addresses, organizations.
+    Lazy-loaded so the proxy starts instantly even if spaCy model isn't downloaded.
+    """
 
-    def __init__(self, custom_patterns: Optional[dict] = None):
+    # Map Presidio entity types to our PIIType enum
+    ENTITY_MAP = {
+        "PERSON": PIIType.PERSON_NAME,
+        "LOCATION": PIIType.LOCATION,
+        "GPE": PIIType.LOCATION,       # Geopolitical entity
+        "LOC": PIIType.LOCATION,
+    }
+
+    def __init__(self):
+        self._analyzer = None
+        self._available = None  # None = not yet checked
+        self._cache: dict = {}
+
+    def _try_load(self) -> bool:
+        """Attempt to load Presidio. Returns True if successful."""
+        if self._available is not None:
+            return self._available
+        try:
+            from presidio_analyzer import AnalyzerEngine
+            self._analyzer = AnalyzerEngine()
+            self._available = True
+            print("[PrivacyGuardian] Presidio NLP detector loaded.")
+        except Exception:
+            self._available = False
+            print("[PrivacyGuardian] Presidio not available — install presidio-analyzer + spacy model for NLP detection.")
+        return self._available
+
+    def detect(self, text: str) -> List[PIIMatch]:
+        """Run Presidio NLP detection. Returns empty list if not available.
+        Results are cached per string: agent requests resend the whole history every turn."""
+        if not self._try_load():
+            return []
+        key = hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
+        if key in self._cache:
+            return self._cache[key]
+        result = self._analyze(text)
+        if len(self._cache) > 4096:
+            self._cache.clear()
+        self._cache[key] = result
+        return result
+
+    def _analyze(self, text: str) -> List[PIIMatch]:
+        try:
+            results = self._analyzer.analyze(text=text, language="en")
+            matches = []
+            for r in results:
+                pii_type = self.ENTITY_MAP.get(r.entity_type)
+                if pii_type is None:
+                    continue
+                matches.append(PIIMatch(
+                    pii_type=pii_type,
+                    value=text[r.start:r.end],
+                    start=r.start,
+                    end=r.end,
+                    confidence=r.score,
+                ))
+            return matches
+        except Exception:
+            return []
+
+
+class PIIDetector:
+    """
+    PII detection: regex patterns (fast, high precision) +
+    optional Presidio NLP layer (names, addresses, semantic context).
+    """
+
+    def __init__(self, custom_patterns: Optional[dict] = None, use_nlp: Optional[bool] = None):
+        # NLP is slow on 100k-token agent requests and noisy on source code: opt-in via PG_NLP=1
+        if use_nlp is None:
+            use_nlp = os.environ.get("PG_NLP", "") == "1"
         self.patterns = PII_PATTERNS.copy()
         if custom_patterns:
             self.patterns.update(custom_patterns)
+        self.nlp = PresidioNLPDetector() if use_nlp else None
 
     def detect(self, text: str) -> List[PIIMatch]:
-        """Detect all PII in text, returns list of matches"""
+        """Detect all PII in text — regex first, then NLP layer."""
         matches = []
 
         for pii_type, pattern in self.patterns.items():
             for match in pattern.finditer(text):
-                # Handle groups vs full match
                 if match.groups():
                     value = match.group(1)
                     start = match.start(1)
@@ -342,10 +458,15 @@ class PIIDetector:
                     value=value,
                     start=start,
                     end=end,
-                    confidence=0.95  # High confidence for regex matches
+                    confidence=0.95,
                 ))
 
-        # Sort by position (start) and remove overlaps
+        # NLP layer: adds names, addresses, anything regex misses
+        if self.nlp:
+            nlp_matches = self.nlp.detect(text)
+            matches.extend(nlp_matches)
+
+        # Sort by position and remove overlaps (regex wins over NLP on ties)
         matches.sort(key=lambda m: (m.start, -m.end))
         return self._remove_overlaps(matches)
 
@@ -380,118 +501,3 @@ class PIIDetector:
         return masked, matches
 
 
-# Optional: Tiny LLM validator for edge cases
-class TinyLLMValidator:
-    """
-    Optional validator using a tiny local LLM (like TinyLlama or Phi-2)
-    Only called for low-confidence detections or edge cases
-    """
-
-    def __init__(self, model_path: Optional[str] = None):
-        self.model = None
-        self.model_path = model_path
-
-    def load(self):
-        """Lazy load the model only when needed"""
-        if self.model is not None:
-            return
-
-        try:
-            # Try llama-cpp-python for minimal overhead
-            from llama_cpp import Llama
-            if self.model_path:
-                self.model = Llama(
-                    model_path=self.model_path,
-                    n_ctx=512,      # Small context
-                    n_threads=2,    # Minimal CPU usage
-                    n_gpu_layers=0, # CPU only for minimal impact
-                    verbose=False
-                )
-        except ImportError:
-            print("Note: llama-cpp-python not installed, using regex-only mode")
-
-    def validate(self, text: str, suspected_pii: str, pii_type: str) -> float:
-        """
-        Ask tiny LLM to validate if suspected text is actually PII
-        Returns confidence score 0.0 - 1.0
-        """
-        if self.model is None:
-            return 0.5  # Neutral if no model
-
-        prompt = f"""Is this text personally identifiable information (PII) of type {pii_type}?
-Text: "{suspected_pii}"
-Answer only YES or NO:"""
-
-        try:
-            response = self.model(prompt, max_tokens=5, temperature=0)
-            answer = response['choices'][0]['text'].strip().upper()
-            return 0.95 if 'YES' in answer else 0.1
-        except Exception:
-            return 0.5
-
-
-# Test
-if __name__ == "__main__":
-    detector = PIIDetector()
-
-    test_text = """
-    === PERSONAL ===
-    Contact John at john.doe@example.com or call 555-123-4567.
-    His SSN is 123-45-6789.
-    DOB: 03/15/1985
-    License: DL# A1234567
-
-    === FINANCIAL ===
-    Credit card: 4532-1234-5678-9012
-    Bank account# 12345678901234
-    IBAN: DE89370400440532013000
-    Routing: 021000021
-    EIN: 12-3456789
-    Tax ID: 12-3456789
-
-    === HEALTH (HIPAA) ===
-    Patient ID: PAT123456
-    MRN: MRN123456789
-    Member ID: XYZ123456789
-    DEA: AB1234567
-    NPI: 1234567890
-    ICD-10: J45.20
-    NDC: 12345-6789-01
-
-    === LEGAL ===
-    Case# 23-cv-12345
-    Bar# 123456
-    Docket# 23-CV-001234
-
-    === TECHNICAL ===
-    API key: sk-ant-api03-abcdefghijklmnop123456
-    OpenAI: sk-abcdefghijklmnopqrstuvwxyz123456
-    Stripe: sk_live_abcdefghijklmnopqrstuvwx
-    AWS: AKIAIOSFODNN7EXAMPLE
-    Database: postgres://user:secretpass123@localhost:5432/mydb
-    JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U
-    """
-
-    print("=== PII Detection Test ===\n")
-    matches = detector.detect(test_text)
-
-    # Group by category
-    categories = {
-        "Personal": ["EMAIL", "PHONE", "SSN", "PASSPORT", "DRV_LIC", "DOB"],
-        "Financial": ["CREDIT_CARD", "BANK_ACCT", "IBAN", "ROUTING", "TAX_ID", "VAT", "EIN"],
-        "Health": ["MRN", "HEALTH_INS", "DEA", "NPI", "ICD", "NDC"],
-        "Legal": ["CASE_NUM", "BAR_NUM", "DOCKET"],
-        "Technical": ["API_KEY", "OPENAI_KEY", "GOOGLE_KEY", "STRIPE_KEY", "AWS_KEY",
-                     "PRIVATE_KEY", "PASSWORD", "IP_ADDRESS", "MAC_ADDRESS",
-                     "JWT_TOKEN", "GITHUB_TOKEN", "SLACK_TOKEN", "DATABASE_URL", "SECRET"],
-    }
-
-    for cat, types in categories.items():
-        cat_matches = [m for m in matches if m.pii_type.value in types]
-        if cat_matches:
-            print(f"\n--- {cat} ---")
-            for m in cat_matches:
-                print(f"  [{m.pii_type.value}] '{m.value[:40]}...' " if len(m.value) > 40
-                      else f"  [{m.pii_type.value}] '{m.value}'")
-
-    print(f"\n=== Summary: {len(matches)} items detected ===\n")

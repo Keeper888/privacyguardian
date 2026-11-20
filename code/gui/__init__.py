@@ -1,1 +1,0 @@
-# PrivacyGuardian GUI Package
